@@ -479,7 +479,7 @@ class BlockAccessor:
         else:
             raise TypeError("Not a block type: {} ({})".format(block, type(block)))
 
-    def sample(self, n_samples: int, key: Any) -> "Block":
+    def sample(self, n_samples: int, key: Any, ascending: bool) -> "Block":
         """Return a random sample of items from this block."""
         raise NotImplementedError
 
@@ -505,4 +505,11 @@ class BlockAccessor:
         blocks: List[Block], key: Optional[str], agg: "AggregateFn"
     ) -> Tuple[Block, BlockMetadata]:
         """Aggregate partially combined and sorted blocks."""
+        raise NotImplementedError
+    
+    @staticmethod
+    def sorted_boundaries(
+        blocks: List[Block], key: Any
+    ) -> List[Block]:
+        "Returns a sorted list of sample boundary points with respect n-dim key"
         raise NotImplementedError

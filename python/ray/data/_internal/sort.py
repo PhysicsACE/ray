@@ -83,6 +83,7 @@ def sample_boundaries(
     key: SortKeyT,
     num_reducers: int,
     ctx: Optional[TaskContext] = None,
+    descending: bool = False,
 ) -> List[T]:
     """
     Return (num_reducers - 1) items in ascending order from the blocks that
@@ -120,9 +121,9 @@ def sample_boundaries(
     for sample in samples:
         builder.add_block(sample)
     samples = builder.build()
-    column = key[0][0] if isinstance(key, list) else None
-    sample_items = BlockAccessor.for_block(samples).to_numpy(column)
-    sample_items = np.sort(sample_items)
+    orderstr = "descending" if descending else "ascending"
+    sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
+    sample_items = BlockAccessor.for_block(samples).to_numpy()
     ret = [
         np.quantile(sample_items, q, interpolation="nearest")
         for q in np.linspace(0, 1, num_reducers)

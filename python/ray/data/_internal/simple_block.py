@@ -142,7 +142,7 @@ class SimpleBlockAccessor(BlockAccessor):
     def builder() -> SimpleBlockBuilder:
         return SimpleBlockBuilder()
 
-    def sample(self, n_samples: int = 1, key: "SortKeyT" = None) -> List[T]:
+    def sample(self, n_samples: int = 1, key: "SortKeyT" = None, ascending: bool = False) -> List[T]:
         if not callable(key) and key is not None:
             raise NotImplementedError(
                 "Python sort key must be either None or a callable "
@@ -150,9 +150,10 @@ class SimpleBlockAccessor(BlockAccessor):
             )
         k = min(n_samples, len(self._items))
         ret = random.sample(self._items, k)
-        if key is None:
-            return ret
-        return [key(x) for x in ret]
+        # if key is None:
+        #     return ret
+        # return sorted(ret, key=key, reverse=ascending)
+        return ret
 
     def count(self, on: str) -> Optional[U]:
         if on is not None and not callable(on):
@@ -461,3 +462,6 @@ class SimpleBlockAccessor(BlockAccessor):
         return ret, SimpleBlockAccessor(ret).get_metadata(
             None, exec_stats=stats.build()
         )
+    
+    def sorted_boundaries(self, blocks: List[Block], key: "SortKeyT", descending: bool) -> List[Block]:
+        return sorted(blocks, key=key, reverse=descending)

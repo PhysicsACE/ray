@@ -284,9 +284,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         if should_be_single_ndarray:
             assert len(columns) == 1
-            arrays = arrays[0]
-        else:
-            arrays = dict(zip(columns, arrays))
+        #     arrays = arrays[0]
+        # else:
+        arrays = dict(zip(columns, arrays))
         return arrays
 
     def to_arrow(self) -> "pyarrow.Table":
@@ -662,6 +662,10 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         ret = builder.build()
         return ret, ArrowBlockAccessor(ret).get_metadata(None, exec_stats=stats.build())
+    
+    def _sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> "pyarrow.Table":
+        mergedtable = pyarrow.concat_tables(blocks)
+        return mergedtable.sort_by(key)
 
 
 def _copy_table(table: "pyarrow.Table") -> "pyarrow.Table":

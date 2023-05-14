@@ -241,7 +241,7 @@ class TableBlockAccessor(BlockAccessor):
     def _sample(self, n_samples: int, key: "SortKeyT") -> Any:
         raise NotImplementedError
 
-    def sample(self, n_samples: int, key: "SortKeyT") -> Any:
+    def sample(self, n_samples: int, key: "SortKeyT", ascending: bool) -> Any:
         if key is None or callable(key):
             raise NotImplementedError(
                 f"Table sort key must be a column name, was: {key}"
@@ -252,3 +252,9 @@ class TableBlockAccessor(BlockAccessor):
             return self._empty_table()
         k = min(n_samples, self.num_rows())
         return self._sample(k, key)
+    
+    def _sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> Any:
+        raise NotImplementedError
+    
+    def sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> Any:
+        return self._sorted_boundaries(blocks, key)

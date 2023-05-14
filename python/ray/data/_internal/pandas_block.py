@@ -229,9 +229,10 @@ class PandasBlockAccessor(TableBlockAccessor):
             arrays.append(self._table[column].to_numpy())
 
         if should_be_single_ndarray:
-            arrays = arrays[0]
-        else:
-            arrays = dict(zip(columns, arrays))
+            assert len(columns) == 1
+        #     arrays = arrays[0]
+        # else:
+        arrays = dict(zip(columns, arrays))
         return arrays
 
     def to_arrow(self) -> "pyarrow.Table":
@@ -579,3 +580,15 @@ class PandasBlockAccessor(TableBlockAccessor):
         return ret, PandasBlockAccessor(ret).get_metadata(
             None, exec_stats=stats.build()
         )
+    
+    def _sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> "pandas.DataFrame":
+        cols, orders = [], []
+        for k in key:
+            cols.append(k[0])
+            if k[1] == "ascending":
+                orders.append(True)
+                continue
+            orders.append(False)
+
+        mergeddf = pandas.concat(blocks)
+        return mergeddf.sort_values(by=cols, ascending=orders)
