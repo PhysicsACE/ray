@@ -63,6 +63,13 @@ def get_sort_transform(context: DataContext) -> Callable:
         return transform_pyarrow.sort
 
 
+def get_sort_indices_transform(context: DataContext) -> Callable:
+    if context.use_polars:
+        return transform_polars.sort_indices
+    
+    return transform_pyarrow.sort_indices
+
+
 def get_concat_and_sort_transform(context: DataContext) -> Callable:
     if context.use_polars:
         return transform_polars.concat_and_sort
@@ -442,8 +449,10 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         context = DataContext.get_current()
         sort = get_sort_transform(context)
+        sort_indices = get_concat_and_sort_transform(context)
         col, _ = key[0]
         table = sort(self._table, key, descending)
+        tableindices = sort_indices(self._table, key, descending)
         if len(boundaries) == 0:
             return [table]
 
