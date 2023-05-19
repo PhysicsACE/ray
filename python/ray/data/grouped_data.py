@@ -10,7 +10,6 @@ from ray.data._internal.plan import AllToAllStage
 from ray.data._internal.shuffle import ShuffleOp, SimpleShufflePlan
 from ray.data._internal.push_based_shuffle import PushBasedShufflePlan
 from ._internal.table_block import TableBlockAccessor
-from ._internal.util import row_zip
 from ray.data.aggregate import (
     _AggregateOnKeyBase,
     AggregateFn,
@@ -87,9 +86,6 @@ class _GroupbyOp(ShuffleOp):
 
         if isinstance(key, str):
             columns.add(key)
-        elif isinstance(key, list):
-            for k in key:
-                columns.add(k[0])
         elif callable(key):
             prune_columns = False
 
@@ -316,12 +312,8 @@ class GroupedData:
             boundaries = []
             # Get the keys of the batch in numpy array format
             keys = block_accessor.to_numpy(self._key)
-            zipStack = []
-            for k, v in keys.items():
-                zipStack.append(v)
-            keyRows = row_zip(zipStack)
             start = 0
-            while start < keyRows.size:
+            while start < keys.size:
                 end = start + np.searchsorted(keys[start:], keys[start], side="right")
                 boundaries.append(end)
                 start = end
