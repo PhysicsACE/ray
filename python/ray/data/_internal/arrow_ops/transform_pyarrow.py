@@ -1,4 +1,6 @@
 from typing import TYPE_CHECKING, List, Union
+from ray.data._internal.remote_fn import cached_remote_fn
+from ray.data._internal.progress_bar import ProgressBar
 
 try:
     import pyarrow
@@ -15,6 +17,77 @@ def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.
     indices = pac.sort_indices(table, sort_keys=key)
     return take_table(table, indices)
 
+
+def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
+    import pyarrow.compute as pac
+
+    indices = pac.sort_indices(table, sort_keys=key)
+    return indices
+
+
+def searchsorted(table: "pyarrow.Table", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
+    """
+    This method is an implementation of searchsorted for pyarrow tables. It assumes 
+    that the input table is already sorted in the correct order.
+    """
+
+    import pyarrow as pac
+    partitionIdx = cached_remote_fn(find_partitionIdx)
+    bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
+    bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
+    bounds = bounds_bar.fetch_until_complete(bound_results)
+    return bounds
+
+
+def find_partitionIdx(table: "pyarrow.Table", idx: int, key:"SortKeyT", descending: bool) -> int:
+
+    """
+    This function takes a sorted table and a given index and finds either the 
+    leftmost or rightmost occurence of that row with respect to the columns of the provided sortkey
+    """
+
+    row = table.take([idx])
+    cols = []
+    for c in key:
+        cols.append(c[0])
+
+    rowinfo = row.select(cols)
+    numrows = table.num_rows
+    iterator = -1
+    
+    if descending:
+        if idx > 0:
+            iterator = idx - 1
+        
+        if iterator == -1:
+            return idx
+        
+        while iterator >= 0:
+            comparerow = table.take([iterator])
+            compareInfo = comparerow.select(cols)
+            if rowinfo != compareInfo:
+                return iterator + 1
+            
+            iterator -= 1
+
+        return 0
+    
+    if idx < numrows - 1:
+        iterator = idx + 1
+
+    if iterator == -1:
+        return idx
+    
+    while iterator < numrows:
+        comparerow = table.take([iterator])
+        compareInfo = comparerow.select(cols)
+        if rowinfo != compareInfo:
+            return iterator - 1
+        
+        iterator += 1
+
+    return numrows - 1
+    
 
 def take_table(
     table: "pyarrow.Table",

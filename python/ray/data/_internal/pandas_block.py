@@ -31,6 +31,9 @@ from ray.data._internal.table_block import (
     TableBlockBuilder,
 )
 from ray.data.aggregate import AggregateFn
+from ray.data._internal.remote_fn import cached_remote_fn
+from ray.data._internal.progress_bar import ProgressBar
+
 
 if TYPE_CHECKING:
     import pyarrow
@@ -404,11 +407,32 @@ class PandasBlockAccessor(TableBlockAccessor):
             aggregation.
             If key is None then the k column is omitted.
         """
-        if key is not None and not isinstance(key, str):
+        if key is not None and not isinstance(key, str) and not isinstance(key, list):
             raise ValueError(
-                "key must be a string or None when aggregating on Pandas blocks, but "
+                "key must be a string, None or List when aggregating on Pandas blocks, but "
                 f"got: {type(key)}."
             )
+        
+        key_cols = []
+        if isinstance(key, list):
+            for k in key:
+                key_cols.append(k[0])
+        else:
+            key_cols.append(key)
+
+        def extract_key(row) -> Union[Any, List[Any]]:
+            currVals = []
+            for k in key_cols:
+                currVals.extend(row[k])
+            return currVals[0] if len(currVals) == 1 else currVals
+        
+        def pretty_grouping(k: Union[Any, List[Any]]) -> str:
+            if isinstance(k, list):
+                s = str(k[0])
+                for i in range(1, len(k)):
+                    s += ',' + str(k[i])
+                return s
+            return str(k)
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
@@ -424,8 +448,8 @@ class PandasBlockAccessor(TableBlockAccessor):
                 try:
                     if next_row is None:
                         next_row = next(iter)
-                    next_key = next_row[key]
-                    while next_row[key] == next_key:
+                    next_key = extract_key(next_row)
+                    while extract_key(next_row) == next_key:
                         end += 1
                         try:
                             next_row = next(iter)
@@ -447,7 +471,7 @@ class PandasBlockAccessor(TableBlockAccessor):
             # Build the row.
             row = {}
             if key is not None:
-                row[key] = group_key
+                row[pretty_grouping(key)] = pretty_grouping(group_key)
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -472,8 +496,15 @@ class PandasBlockAccessor(TableBlockAccessor):
         if len(blocks) == 0:
             ret = PandasBlockAccessor._empty_table()
         else:
+            cols, order = [], []
+            for k in key:
+                cols.append(k[0])
+                if k[1] == "ascending":
+                    order.append(not _descending)
+                    continue
+                order.append(_descending)
             ret = pd.concat(blocks, ignore_index=True)
-            ret = ret.sort_values(by=key[0][0], ascending=not _descending)
+            ret = ret.sort_values(by=cols, ascending=order)
         return ret, PandasBlockAccessor(ret).get_metadata(
             None, exec_stats=stats.build()
         )
@@ -592,3 +623,76 @@ class PandasBlockAccessor(TableBlockAccessor):
 
         mergeddf = pandas.concat(blocks)
         return mergeddf.sort_values(by=cols, ascending=orders)
+    
+
+def pandas_searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
+    """Pandas implementation for dataframe searchsorted as it only exists for index and series in the builin library"""
+
+    cols, orders = [], []
+    for k in key:
+        cols.append(k[0])
+        if k[1] == "ascending":
+            orders.append(True)
+            continue
+        orders.append(False)
+    # sortedTable = table.sort_values(by=cols, ascending=orders)
+    sortedindices = list(table.index.values)
+    partitionIdx = cached_remote_fn(pandas_localIdxbound)
+    bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
+    bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
+    bounds = bounds_bar.fetch_until_complete(bound_results)
+    return bounds
+
+def pandas_localIdxbound(table: "pandas.DataFrame", idx: int, key: "SortKeyT", descending: bool) -> int:
+
+    """
+    This function takes a sorted table and a given index and finds either the 
+    leftmost or rightmost occurence of that row with respect to the columns of the provided sortkey
+    """
+
+    cols, orders = [], []
+    for k in key:
+        cols.append(k[0])
+        if k[1] == "ascending":
+            orders.append(True)
+            continue
+        orders.append(False)
+    row = table.loc[[idx]]
+    rowinfo = row.select[cols]
+
+    numrows = len(table.index)
+    iterator = -1
+
+    if descending:
+        if idx > 0:
+            iterator = idx - 1
+        
+        if iterator == -1:
+            return idx
+        
+        while iterator >= 0:
+            comparerow = table.loc[[iterator]]
+            compareInfo = comparerow.select[cols]
+            if rowinfo != compareInfo:
+                return iterator + 1
+            
+            iterator -= 1
+
+        return 0
+        
+    if idx < numrows - 1:
+        iterator = idx + 1
+
+    if iterator == -1:
+        return idx
+    
+    while iterator < numrows:
+        comparerow = table.take([iterator])
+        compareInfo = comparerow.select(cols)
+        if rowinfo != compareInfo:
+            return iterator - 1
+        
+        iterator += 1
+
+    return numrows - 1
+

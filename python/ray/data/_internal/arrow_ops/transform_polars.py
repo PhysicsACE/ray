@@ -30,6 +30,20 @@ def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.
     return df.sort(col, reverse=descending).to_arrow()
 
 
+def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
+    check_polars_installed()
+    cols, order = [], []
+    for c in key:
+        cols.append(c[0])
+        if c[1] == "ascending":
+            order.append(True)
+            continue
+        order.append(False)
+
+    df = pl.from_arrow(table)
+    return df.arg_sort_by(cols, descending=order)
+
+
 def concat_and_sort(
     blocks: List["pyarrow.Table"], key: "SortKeyT", descending: bool
 ) -> "pyarrow.Table":
