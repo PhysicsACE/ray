@@ -27,7 +27,7 @@ from ray.data._internal.progress_bar import ProgressBar
 from ray.data._internal.push_based_shuffle import PushBasedShufflePlan
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.data._internal.shuffle import ShuffleOp, SimpleShufflePlan
-from ray.data.block import Block, BlockAccessor, BlockExecStats, BlockMetadata
+from ray.data.block import Block, BlockAccessor, BlockExecStats, BlockMetadata, normalize_keylist
 from ray.data.context import DataContext
 from ray.types import ObjectRef
 
@@ -124,8 +124,17 @@ def sample_boundaries(
     orderstr = "descending" if descending else "ascending"
     sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
     sample_items = BlockAccessor.for_block(samples).to_numpy()
+    if len(sample_items.keys()) == 1:
+        sample_table = sample_items[sample_items.keys()[0]]
+        ret = [
+            np.quantile(sample_table, q, interpolation="nearest")
+            for q in np.linspace(0, 1, num_reducers)
+        ]
+        return ret[1:]
+
+    sample_table = np.array([v for _, v in sample_items.items()])
     ret = [
-        np.quantile(sample_items, q, interpolation="nearest")
+        np.quantile(sample_table, q, interpolation="nearest", axis=1)
         for q in np.linspace(0, 1, num_reducers)
     ]
     return ret[1:]
@@ -145,11 +154,14 @@ def sort_impl(
     if len(blocks_list) == 0:
         return BlockList([], []), stage_info
 
-    if isinstance(key, str):
-        key = [(key, "descending" if descending else "ascending")]
+    # if isinstance(key, str):
+    #     key = [(key, "descending" if descending else "ascending")]
 
-    if isinstance(key, list):
-        descending = key[0][1] == "descending"
+    # if isinstance(key, list):
+    #     descending = key[0][1] == "descending"
+
+    if not callable(key):
+        key = normalize_keylist(key, descending)
 
     num_mappers = len(blocks_list)
     # Use same number of output partitions.

@@ -1,7 +1,7 @@
 import importlib
 import logging
 import os
-from typing import Any, List, Union, Optional, TYPE_CHECKING, Tuple
+from typing import Any, List, Union, Optional, TYPE_CHECKING, Tuple, Dict
 from types import ModuleType
 import sys
 
@@ -514,14 +514,31 @@ def row_zip(arr: List[List[Any]]) -> List[Any]:
     tup = tuple(arr)
     return np.column_stack(tup)
 
-def nested_searchsorted(arr: List[List[Any]], key: List[Any]) -> int:
-    if len(key) == 1:
-        return np.searchsorted(arr[0], key[0], side="right")
-    
-    left, right = 0, len(arr[0])
-    for c in zip(key, arr):
-        k, col = c[0], c[1]
-        left = np.searchsorted(col, k, side="left")
-        right = np.searchsorted(col, k, side="right")
 
+def dict_tonumpy(table: Dict[str, np.ndarray]) -> np.ndarray:
+    arr = np.array([v for _, v in table.items()])
+    return arr
+
+
+def custom_searchsorted(table: np.ndarray, val: List[Any], order: List[bool], descending: bool = False) -> int:
+    
+    left, right = 0, table.shape[-1]
+    for i in range(len(val)):
+        if order[i][1] == "ascending":
+            dir = True if (not descending) else False
+        else:
+            dir = descending
+        colVals = table[i][left:right]
+        desiredVal = val[i]
+        prevleft = left
+
+        if not dir:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+        else:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
+    
+    if descending:
+        return left
     return right

@@ -15,6 +15,7 @@ from typing import (
 )
 
 import numpy as np
+import json
 
 from ray.air.constants import TENSOR_COLUMN_NAME
 from ray._private.utils import _get_pyarrow_version
@@ -75,6 +76,12 @@ def get_concat_and_sort_transform(context: DataContext) -> Callable:
         return transform_polars.concat_and_sort
     else:
         return transform_pyarrow.concat_and_sort
+    
+def get_searchsorted_transform(context: DataContext) -> Callable:
+    if context.use_polars:
+        return transform_polars.searchsorted
+    else:
+        return transform_pyarrow.searchsorted
 
 
 class ArrowRow(TableRow):
@@ -437,10 +444,10 @@ class ArrowBlockAccessor(TableBlockAccessor):
     def sort_and_partition(
         self, boundaries: List[T], key: "SortKeyT", descending: bool
     ) -> List["Block"]:
-        if len(key) > 1:
-            raise NotImplementedError(
-                "sorting by multiple columns is not supported yet"
-            )
+        # if len(key) > 1:
+        #     raise NotImplementedError(
+        #         "sorting by multiple columns is not supported yet"
+        #     )
 
         if self._table.num_rows == 0:
             # If the pyarrow table is empty we may not have schema
@@ -449,10 +456,8 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         context = DataContext.get_current()
         sort = get_sort_transform(context)
-        sort_indices = get_concat_and_sort_transform(context)
-        col, _ = key[0]
+        searchsorted = get_searchsorted_transform(context)
         table = sort(self._table, key, descending)
-        tableindices = sort_indices(self._table, key, descending)
         if len(boundaries) == 0:
             return [table]
 
@@ -463,13 +468,15 @@ class ArrowBlockAccessor(TableBlockAccessor):
         # partition[i]. If `descending` is true, `boundaries` would also be
         # in descending order and we only need to count the number of items
         # *greater than* the boundary value instead.
-        if descending:
-            num_rows = len(table[col])
-            bounds = num_rows - np.searchsorted(
-                table[col], boundaries, sorter=np.arange(num_rows - 1, -1, -1)
-            )
-        else:
-            bounds = np.searchsorted(table[col], boundaries)
+        # if descending:
+        #     num_rows = len(table[col])
+        #     bounds = num_rows - np.searchsorted(
+        #         table[col], boundaries, sorter=np.arange(num_rows - 1, -1, -1)
+        #     )
+        # else:
+        #     bounds = np.searchsorted(table[col], boundaries)
+
+        bounds = searchsorted(table, boundaries, key, descending)
         last_idx = 0
         for idx in bounds:
             partitions.append(table.slice(last_idx, idx - last_idx))
@@ -492,11 +499,45 @@ class ArrowBlockAccessor(TableBlockAccessor):
             aggregation.
             If key is None then the k column is omitted.
         """
-        if key is not None and not isinstance(key, str):
+        if key is not None and not isinstance(key, str) and not isinstance(key, list):
             raise ValueError(
-                "key must be a string or None when aggregating on Arrow blocks, but "
+                "key must be a string, a list of strings or None when aggregating on Arrow blocks, but "
                 f"got: {type(key)}."
             )
+        
+        key_cols = []
+        if isinstance(key, list):
+            for k in key:
+                key_cols.append(k[0])
+        else:
+            key_cols.append(key)
+
+        def extract_key(row) -> Union[Any, List[Any]]:
+            currVals = []
+            for k in key_cols:
+                currVals.extend(row[k])
+            return currVals[0] if len(currVals) == 1 else currVals
+        
+        def pretty_grouping(k: Union[Any, List[Any]]) -> str:
+            if isinstance(k, str):
+                return json.dumps({key: k})
+            elif isinstance(k, list):
+                keyDict = {key[0][0]: k[0]}
+                for i in range(1, len(k)):
+                    keyDict[key[i][0]] = k[i]
+                return json.dumps(keyDict)
+            else:
+                raise ValueError(
+                "Unexpected grouping key found. Should have been checked"
+            )
+
+        def serializedKey() -> str:
+            if isinstance(key, str):
+                return key
+            serialized = k[0]
+            for i in range(1, len(key)):
+                serialized += "," + key[i]
+            return serialized
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
@@ -512,8 +553,8 @@ class ArrowBlockAccessor(TableBlockAccessor):
                 try:
                     if next_row is None:
                         next_row = next(iter)
-                    next_key = next_row[key]
-                    while next_row[key] == next_key:
+                    next_key = extract_key(next_row)
+                    while extract_key(next_row) == next_key:
                         end += 1
                         try:
                             next_row = next(iter)
@@ -535,7 +576,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
             # Build the row.
             row = {}
             if key is not None:
-                row[key] = group_key
+                row[serializedKey()] = pretty_grouping(group_key)
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -655,7 +696,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
                 # Build the row.
                 row = {}
                 if key is not None:
-                    row[next_key_name] = next_key
+                    toDict = json.loads(next_key)
+                    for k, v in toDict.items():
+                        row[k] = v
 
                 for agg, agg_name, accumulator in zip(
                     aggs, resolved_agg_names, accumulators
@@ -672,9 +715,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
         ret = builder.build()
         return ret, ArrowBlockAccessor(ret).get_metadata(None, exec_stats=stats.build())
     
-    def _sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> "pyarrow.Table":
-        mergedtable = pyarrow.concat_tables(blocks)
-        return mergedtable.sort_by(key)
+    def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> "pyarrow.Table":
+        concat_and_sort = get_concat_and_sort_transform(DataContext.get_current())
+        return concat_and_sort(self._table, key, descending)
 
 
 def _copy_table(table: "pyarrow.Table") -> "pyarrow.Table":

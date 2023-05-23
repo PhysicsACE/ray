@@ -14,6 +14,7 @@ from typing import (
 import collections
 import heapq
 import numpy as np
+import json
 
 from ray.air.constants import TENSOR_COLUMN_NAME
 from ray.data.block import (
@@ -366,8 +367,14 @@ class PandasBlockAccessor(TableBlockAccessor):
             # so calling sort_indices() will raise an error.
             return [self._empty_table() for _ in range(len(boundaries) + 1)]
 
-        col, _ = key[0]
-        table = self._table.sort_values(by=col, ascending=not descending)
+        cols, order = [], []
+        for k in key:
+            cols.append(k[0])
+            if k[1] == "ascending":
+                order.append(True)
+                continue
+            order.append(False)
+        table = self._table.sort_values(by=cols, ascending=order)
         if len(boundaries) == 0:
             return [table]
 
@@ -378,13 +385,15 @@ class PandasBlockAccessor(TableBlockAccessor):
         # partition[i]. If `descending` is true, `boundaries` would also be
         # in descending order and we only need to count the number of items
         # *greater than* the boundary value instead.
-        if descending:
-            num_rows = len(table[col])
-            bounds = num_rows - table[col].searchsorted(
-                boundaries, sorter=np.arange(num_rows - 1, -1, -1)
-            )
-        else:
-            bounds = table[col].searchsorted(boundaries)
+        # if descending:
+        #     num_rows = len(table[col])
+        #     bounds = num_rows - table[col].searchsorted(
+        #         boundaries, sorter=np.arange(num_rows - 1, -1, -1)
+        #     )
+        # else:
+        #     bounds = table[col].searchsorted(boundaries)
+        
+        bounds = searchsorted(table, boundaries, key, descending)
         last_idx = 0
         for idx in bounds:
             partitions.append(table[last_idx:idx])
@@ -427,12 +436,25 @@ class PandasBlockAccessor(TableBlockAccessor):
             return currVals[0] if len(currVals) == 1 else currVals
         
         def pretty_grouping(k: Union[Any, List[Any]]) -> str:
-            if isinstance(k, list):
-                s = str(k[0])
+            if isinstance(k, str):
+                return json.dumps({key: k})
+            elif isinstance(k, list):
+                keyDict = {key[0][0]: k[0]}
                 for i in range(1, len(k)):
-                    s += ',' + str(k[i])
-                return s
-            return str(k)
+                    keyDict[key[i][0]] = k[i]
+                return json.dumps(keyDict)
+            else:
+                raise ValueError(
+                "Unexpected grouping key found. Should have been checked"
+            )
+
+        def serializedKey() -> str:
+            if isinstance(key, str):
+                return key
+            serialized = k[0]
+            for i in range(1, len(key)):
+                serialized += "," + key[i]
+            return serialized
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
@@ -471,7 +493,7 @@ class PandasBlockAccessor(TableBlockAccessor):
             # Build the row.
             row = {}
             if key is not None:
-                row[pretty_grouping(key)] = pretty_grouping(group_key)
+                row[serializedKey()] = pretty_grouping(group_key)
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -500,9 +522,9 @@ class PandasBlockAccessor(TableBlockAccessor):
             for k in key:
                 cols.append(k[0])
                 if k[1] == "ascending":
-                    order.append(not _descending)
+                    order.append(True)
                     continue
-                order.append(_descending)
+                order.append(False)
             ret = pd.concat(blocks, ignore_index=True)
             ret = ret.sort_values(by=cols, ascending=order)
         return ret, PandasBlockAccessor(ret).get_metadata(
@@ -593,7 +615,9 @@ class PandasBlockAccessor(TableBlockAccessor):
                 # Build the row.
                 row = {}
                 if key is not None:
-                    row[next_key_name] = next_key
+                    toDict = json.loads(next_key)
+                    for k, v in toDict.items():
+                        row[k] = v
 
                 for agg, agg_name, accumulator in zip(
                     aggs, resolved_agg_names, accumulators
@@ -612,7 +636,7 @@ class PandasBlockAccessor(TableBlockAccessor):
             None, exec_stats=stats.build()
         )
     
-    def _sorted_boundaries(self, blocks: List[Block], key: "SortKeyT") -> "pandas.DataFrame":
+    def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> "pandas.DataFrame":
         cols, orders = [], []
         for k in key:
             cols.append(k[0])
@@ -621,78 +645,133 @@ class PandasBlockAccessor(TableBlockAccessor):
                 continue
             orders.append(False)
 
-        mergeddf = pandas.concat(blocks)
+        # if k[1] == "ascending":
+        #     keys.append((k[0], "descending" if descending else "ascending"))
+        # else:
+        #     keys.append(k[0], "ascending" if descending else "descending")
+
+        mergeddf = pandas.concat(self._table)
         return mergeddf.sort_values(by=cols, ascending=orders)
     
 
-def pandas_searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
-    """Pandas implementation for dataframe searchsorted as it only exists for index and series in the builin library"""
+# def pandas_searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
+#     """Pandas implementation for dataframe searchsorted as it only exists for index and series in the builin library"""
 
-    cols, orders = [], []
-    for k in key:
-        cols.append(k[0])
-        if k[1] == "ascending":
-            orders.append(True)
-            continue
-        orders.append(False)
-    # sortedTable = table.sort_values(by=cols, ascending=orders)
-    sortedindices = list(table.index.values)
-    partitionIdx = cached_remote_fn(pandas_localIdxbound)
+#     cols, orders = [], []
+#     for k in key:
+#         cols.append(k[0])
+#         if k[1] == "ascending":
+#             orders.append(True)
+#             continue
+#         orders.append(False)
+#     # sortedTable = table.sort_values(by=cols, ascending=orders)
+#     sortedindices = list(table.index.values)
+#     partitionIdx = cached_remote_fn(pandas_localIdxbound)
+#     bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
+#     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
+#     bounds = bounds_bar.fetch_until_complete(bound_results)
+#     return bounds
+
+# def pandas_localIdxbound(table: "pandas.DataFrame", idx: int, key: "SortKeyT", descending: bool) -> int:
+
+#     """
+#     This function takes a sorted table and a given index and finds either the 
+#     leftmost or rightmost occurence of that row with respect to the columns of the provided sortkey
+#     """
+
+#     cols, orders = [], []
+#     for k in key:
+#         cols.append(k[0])
+#         if k[1] == "ascending":
+#             orders.append(True)
+#             continue
+#         orders.append(False)
+#     row = table.loc[[idx]]
+#     rowinfo = row.select[cols]
+
+#     numrows = len(table.index)
+#     iterator = -1
+
+#     if descending:
+#         if idx > 0:
+#             iterator = idx - 1
+        
+#         if iterator == -1:
+#             return idx
+        
+#         while iterator >= 0:
+#             comparerow = table.loc[[iterator]]
+#             compareInfo = comparerow.select[cols]
+#             if rowinfo != compareInfo:
+#                 return iterator + 1
+            
+#             iterator -= 1
+
+#         return 0
+        
+#     if idx < numrows - 1:
+#         iterator = idx + 1
+
+#     if iterator == -1:
+#         return idx
+    
+#     while iterator < numrows:
+#         comparerow = table.take([iterator])
+#         compareInfo = comparerow.select(cols)
+#         if rowinfo != compareInfo:
+#             return iterator - 1
+        
+#         iterator += 1
+
+#     return numrows - 1
+
+
+def searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
+    """
+    This method finds the index to place a row containing a set of columnar values to 
+    maintain ordering of the sorted table. 
+    """
+    partitionIdx = cached_remote_fn(find_partitionIdx)
     bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds
 
-def pandas_localIdxbound(table: "pandas.DataFrame", idx: int, key: "SortKeyT", descending: bool) -> int:
+
+def find_partitionIdx(table: "pandas.DataFrame", desired: List[Any], key:"SortKeyT", descending: bool) -> int:
 
     """
-    This function takes a sorted table and a given index and finds either the 
-    leftmost or rightmost occurence of that row with respect to the columns of the provided sortkey
+    This function is an implementation of np.searchsorted for pyarrow tables. It also
+    extends the existing functionality of the numpy version as well as similar 
+    implementation by allowing the user to pass in multi columnar keys with their ordering
+    info to find the left or right most index at which the row could be placed into the table
+    to maintain the current ordering. Note that the function assumes that the table 
+    passed to it is already sorted with the desired columns and respective orders and the 
+    order key passed to the function should be the one used to compute the table ordering.
+    The implementation uses np.searchsorted as its foundation to take bounds for the i-th
+    key based on the results of the previous i-1 keys.
     """
-
-    cols, orders = [], []
-    for k in key:
-        cols.append(k[0])
-        if k[1] == "ascending":
-            orders.append(True)
-            continue
-        orders.append(False)
-    row = table.loc[[idx]]
-    rowinfo = row.select[cols]
-
-    numrows = len(table.index)
-    iterator = -1
-
-    if descending:
-        if idx > 0:
-            iterator = idx - 1
-        
-        if iterator == -1:
-            return idx
-        
-        while iterator >= 0:
-            comparerow = table.loc[[iterator]]
-            compareInfo = comparerow.select[cols]
-            if rowinfo != compareInfo:
-                return iterator + 1
-            
-            iterator -= 1
-
-        return 0
-        
-    if idx < numrows - 1:
-        iterator = idx + 1
-
-    if iterator == -1:
-        return idx
     
-    while iterator < numrows:
-        comparerow = table.take([iterator])
-        compareInfo = comparerow.select(cols)
-        if rowinfo != compareInfo:
-            return iterator - 1
-        
-        iterator += 1
+    assert len(desired) == len(key)
 
-    return numrows - 1
+    left, right = 0, len(table.index)
+    for i in range(len(desired)):
+        colName = key[i][0]
+        if key[i][1] == "ascending":
+            dir = True if (not descending) else False
+        else:
+            dir = descending
+        colVals = table[colName].to_numpy()[left:right]
+        desiredVal = desired[i]
+        prevleft = left
 
+        if not dir:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+        else:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
+    
+    if descending:
+        return left
+    return right

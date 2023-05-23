@@ -15,7 +15,7 @@ from ray.data._internal.planner.exchange.pull_based_shuffle_task_scheduler impor
 from ray.data._internal.planner.exchange.sort_task_spec import SortKeyT, SortTaskSpec
 from ray.data._internal.stats import StatsDict
 from ray.data._internal.util import unify_block_metadata_schema
-from ray.data.block import _validate_key_fn
+from ray.data.block import _validate_key_fn, normalize_keylist
 from ray.data.context import DataContext
 
 
@@ -41,11 +41,13 @@ def generate_sort_fn(
             return (blocks, {})
         unified_schema = unify_block_metadata_schema(metadata)
         _validate_key_fn(unified_schema, key)
+        if not callable(key):
+            key = normalize_keylist(key, descending)
 
-        if isinstance(key, str):
-            key = [(key, "descending" if descending else "ascending")]
-        if isinstance(key, list):
-            descending = key[0][1] == "descending"
+        # if isinstance(key, str):
+        #     key = [(key, "descending" if descending else "ascending")]
+        # if isinstance(key, list):
+        #     descending = key[0][1] == "descending"
 
         num_mappers = len(blocks)
         # Use same number of output partitions.
@@ -53,8 +55,8 @@ def generate_sort_fn(
 
         # Sample boundaries for sort key.
         boundaries = SortTaskSpec.sample_boundaries(blocks, key, num_outputs)
-        if descending:
-            boundaries.reverse()
+        # if descending:
+        #     boundaries.reverse()
         sort_spec = SortTaskSpec(boundaries=boundaries, key=key, descending=descending)
 
         if DataContext.get_current().use_push_based_shuffle:

@@ -72,6 +72,7 @@ class StrictModeError(ValueError):
 def _validate_key_fn(
     schema: Optional[Union[type, "pyarrow.lib.Schema"]],
     key: Optional[str],
+    grouping: bool = False,
 ) -> None:
     """Check the key function is valid on the given schema."""
     if schema is None:
@@ -104,8 +105,69 @@ def _validate_key_fn(
                 "Callable key '{}' requires dataset format to be "
                 "'simple'".format(key)
             )
+    elif isinstance(key, list):
+        if is_simple_format:
+            raise ValueError(
+                "List key '{}' requires dataset format to be "
+                "'arrow' or 'pandas', was 'simple'.".format(key)
+            )
+        if not key:
+            raise ValueError(
+                "List key '{}' cannot be empty. If you require sorting "
+                "by no columns, please use None as the paramater".format(key)
+            )
+        if len(schema.names) < len(key):
+            raise ValueError(
+                "There are more columns in '{}' than columns in "
+                "schema '{}'.".format(key, schema)
+            )
+        for k in key:
+            if isinstance(k, str):
+                if k not in schema.names:
+                    raise ValueError(
+                        "The column '{}' does not exist in the "
+                        "schema '{}'.".format(k, schema)
+                    )
+            elif isinstance(k, tuple):
+                if grouping:
+                    raise ValueError(
+                        "Invalid key '{}'. Grouping by multiple columns "
+                        "required a list of string column names".format(k)
+                    )
+                if len(k) != 2:
+                    raise ValueError(
+                        "Invalid key '{}'. Keys must be of the form "
+                        "(column, order).".format(k)
+                    )
+                col = k[0]
+                if col not in schema.names:
+                    raise ValueError(
+                        "The column '{}' does not exist in the "
+                        "schema '{}'.".format(col, schema)
+                    )
+                order = k[1]
+                if order != "ascending" or order != "descending":
+                    raise ValueError(
+                        "The order must be 'ascending' or 'descending.'"
+                        "Received '{}'.".format(order)
+                    )
+            else:
+                raise TypeError("Invalid key type {}. Must be a list of column names or of the form (column, order)".format(key))
     else:
         raise TypeError("Invalid key type {} ({}).".format(key, type(key)))
+    
+
+def normalize_keylist(key: List[Any], descending: bool) -> List[Tuple[str, str]]:
+    normalized = []
+    if isinstance(key, str):
+        normalized.append((k, "descending" if descending else "ascending"))
+        return normalized
+    for k in key:
+        if isinstance(k, str):
+            normalized.append((k, "descending" if descending else "ascending"))
+        else:
+            normalized.append(k)
+    return normalized
 
 
 # Represents a batch of records to be stored in the Ray object store.
@@ -509,7 +571,7 @@ class BlockAccessor:
     
     @staticmethod
     def sorted_boundaries(
-        blocks: List[Block], key: Any
+        key: Any, descending: bool
     ) -> List[Block]:
         "Returns a sorted list of sample boundary points with respect n-dim key"
         raise NotImplementedError

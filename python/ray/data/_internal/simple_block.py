@@ -463,5 +463,5 @@ class SimpleBlockAccessor(BlockAccessor):
             None, exec_stats=stats.build()
         )
     
-    def sorted_boundaries(self, blocks: List[Block], key: "SortKeyT", descending: bool) -> List[Block]:
-        return sorted(blocks, key=key, reverse=descending)
+    def sorted_boundaries(self, key: "SortKeyT", descending: bool) -> List[Block]:
+        return sorted(self._items, key=key, reverse=descending)

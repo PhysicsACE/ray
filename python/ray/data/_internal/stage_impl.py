@@ -20,6 +20,7 @@ from ray.data._internal.sort import sort_impl
 from ray.data.context import DataContext
 from ray.data.block import (
     _validate_key_fn,
+    normalize_keylist,
     Block,
     BlockPartition,
     BlockMetadata,
@@ -331,13 +332,8 @@ class SortStage(AllToAllStage):
             else:
                 blocks = block_list
             schema = ds.schema(fetch_if_missing=True)
-            if isinstance(key, list):
-                if not key:
-                    raise ValueError("`key` must be a list of non-zero length")
-                for subkey in key:
-                    _validate_key_fn(schema, subkey)
-            else:
-                _validate_key_fn(schema, key)
+            _validate_key_fn(schema, key)
+            key = normalize_keylist(key, descending)
             return sort_impl(blocks, clear_input_blocks, key, descending, ctx)
 
         super().__init__(

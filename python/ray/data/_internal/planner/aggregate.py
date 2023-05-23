@@ -19,6 +19,8 @@ from ray.data._internal.stats import StatsDict
 from ray.data.aggregate import AggregateFn
 from ray.data.context import DataContext
 from ray.data._internal.util import unify_block_metadata_schema
+from ray.data.block import normalize_keylist
+
 
 
 def generate_aggregate_fn(
@@ -55,10 +57,12 @@ def generate_aggregate_fn(
         else:
             # Use same number of output partitions.
             num_outputs = num_mappers
+            if not callable(key):
+                key = normalize_keylist(key, False)
             # Sample boundaries for aggregate key.
             boundaries = SortTaskSpec.sample_boundaries(
                 blocks,
-                [(key, "ascending")] if isinstance(key, str) else key,
+                key,
                 num_outputs,
             )
 

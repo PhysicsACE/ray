@@ -10,7 +10,7 @@ from ray.data._internal.plan import AllToAllStage
 from ray.data._internal.shuffle import ShuffleOp, SimpleShufflePlan
 from ray.data._internal.push_based_shuffle import PushBasedShufflePlan
 from ._internal.table_block import TableBlockAccessor
-from ._internal.util import row_zip
+from ._internal.util import row_zip, dict_tonumpy, custom_searchsorted
 from ray.data.aggregate import (
     _AggregateOnKeyBase,
     AggregateFn,
@@ -316,15 +316,18 @@ class GroupedData:
             boundaries = []
             # Get the keys of the batch in numpy array format
             keys = block_accessor.to_numpy(self._key)
-            zipStack = []
-            for k, v in keys.items():
-                zipStack.append(v)
+            order = []
+            zipStack = dict_tonumpy(keys)
+            for k, _ in keys.items():
+                order.append((k, "ascending"))
             keyRows = row_zip(zipStack)
+            currKey = keyRows[0]
             start = 0
             while start < keyRows.size:
-                end = start + np.searchsorted(keys[start:], keys[start], side="right")
+                end = start + custom_searchsorted(zipStack[:, start:], currKey, order)
                 boundaries.append(end)
                 start = end
+                currKey = keyRows[end]
             return boundaries
 
         # The batch is the entire block, because we have batch_size=None for

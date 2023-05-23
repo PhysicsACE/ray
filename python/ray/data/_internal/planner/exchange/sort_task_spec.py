@@ -111,11 +111,28 @@ class SortTaskSpec(ExchangeTaskSpec):
         for sample in samples:
             builder.add_block(sample)
         samples = builder.build()
-        column = key[0][0] if isinstance(key, list) else None
-        sample_items = BlockAccessor.for_block(samples).to_numpy(column)
-        sample_items = np.sort(sample_items)
+        orderstr = "descending" if descending else "ascending"
+        sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
+        sample_items = BlockAccessor.for_block(samples).to_numpy()
+        # column = key[0][0] if isinstance(key, list) else None
+        # sample_items = BlockAccessor.for_block(samples).to_numpy(column)
+        # sample_items = np.sort(sample_items)
+        # ret = [
+        #     np.quantile(sample_items, q, interpolation="nearest")
+        #     for q in np.linspace(0, 1, num_reducers)
+        # ]
+        # return ret[1:]
+        if len(sample_items.keys()) == 1:
+            sample_table = sample_items[sample_items.keys()[0]]
+            ret = [
+                np.quantile(sample_table, q, interpolation="nearest")
+                for q in np.linspace(0, 1, num_reducers)
+            ]
+            return ret[1:]
+
+        sample_table = np.array([v for _, v in sample_items.items()])
         ret = [
-            np.quantile(sample_items, q, interpolation="nearest")
+            np.quantile(sample_table, q, interpolation="nearest", axis=1)
             for q in np.linspace(0, 1, num_reducers)
         ]
         return ret[1:]

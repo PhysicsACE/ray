@@ -1,6 +1,7 @@
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, List, Union, Any
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.data._internal.progress_bar import ProgressBar
+import numpy as np
 
 try:
     import pyarrow
@@ -14,7 +15,14 @@ if TYPE_CHECKING:
 def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     import pyarrow.compute as pac
 
-    indices = pac.sort_indices(table, sort_keys=key)
+    keys = []
+    for k in key:
+        if k[1] == "ascending":
+            keys.append((k[0], "descending" if descending else "ascending"))
+        else:
+            keys.append(k[0], "ascending" if descending else "descending")
+
+    indices = pac.sort_indices(table, sort_keys=keys)
     return take_table(table, indices)
 
 
@@ -25,68 +33,56 @@ def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "
     return indices
 
 
-def searchsorted(table: "pyarrow.Table", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
+def searchsorted(table: "pyarrow.Table", boundaries: List[Union[int, List[int]]], key: "SortKeyT", descending: bool) -> List[int]:
     """
-    This method is an implementation of searchsorted for pyarrow tables. It assumes 
-    that the input table is already sorted in the correct order.
+    This method finds the index to place a row containing a set of columnar values to 
+    maintain ordering of the sorted table. 
     """
 
-    import pyarrow as pac
     partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(table, [i] if isinstance(i, int) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds
 
 
-def find_partitionIdx(table: "pyarrow.Table", idx: int, key:"SortKeyT", descending: bool) -> int:
+def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT", descending: bool) -> int:
 
     """
-    This function takes a sorted table and a given index and finds either the 
-    leftmost or rightmost occurence of that row with respect to the columns of the provided sortkey
+    This function is an implementation of np.searchsorted for pyarrow tables. It also
+    extends the existing functionality of the numpy version as well as similar 
+    implementation by allowing the user to pass in multi columnar keys with their ordering
+    info to find the left or right most index at which the row could be placed into the table
+    to maintain the current ordering. Note that the function assumes that the table 
+    passed to it is already sorted with the desired columns and respective orders and the 
+    order key passed to the function should be the one used to compute the table ordering.
+    The implementation uses np.searchsorted as its foundation to take bounds for the i-th
+    key based on the results of the previous i-1 keys.
     """
 
-    row = table.take([idx])
-    cols = []
-    for c in key:
-        cols.append(c[0])
+    assert len(desired) == len(key)
 
-    rowinfo = row.select(cols)
-    numrows = table.num_rows
-    iterator = -1
+    left, right = 0, table.num_rows
+    for i in range(len(desired)):
+        colName = key[i][0]
+        if key[i][1] == "ascending":
+            dir = True if (not descending) else False
+        else:
+            dir = descending
+        colVals = table.column(colName).chunk(0).to_numpy()[left:right]
+        desiredVal = desired[i]
+        prevleft = left
+
+        if not dir:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+        else:
+            left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
+            right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
     
     if descending:
-        if idx > 0:
-            iterator = idx - 1
-        
-        if iterator == -1:
-            return idx
-        
-        while iterator >= 0:
-            comparerow = table.take([iterator])
-            compareInfo = comparerow.select(cols)
-            if rowinfo != compareInfo:
-                return iterator + 1
-            
-            iterator -= 1
-
-        return 0
-    
-    if idx < numrows - 1:
-        iterator = idx + 1
-
-    if iterator == -1:
-        return idx
-    
-    while iterator < numrows:
-        comparerow = table.take([iterator])
-        compareInfo = comparerow.select(cols)
-        if rowinfo != compareInfo:
-            return iterator - 1
-        
-        iterator += 1
-
-    return numrows - 1
+        return left
+    return right
     
 
 def take_table(
