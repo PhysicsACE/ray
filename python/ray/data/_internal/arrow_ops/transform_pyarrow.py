@@ -15,14 +15,14 @@ if TYPE_CHECKING:
 def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     import pyarrow.compute as pac
 
-    keys = []
-    for k in key:
-        if k[1] == "ascending":
-            keys.append((k[0], "descending" if descending else "ascending"))
-        else:
-            keys.append(k[0], "ascending" if descending else "descending")
+    # keys = []
+    # for k in key:
+    #     if k[1] == "ascending":
+    #         keys.append((k[0], "descending" if descending else "ascending"))
+    #     else:
+    #         keys.append(k[0], "ascending" if descending else "descending")
 
-    indices = pac.sort_indices(table, sort_keys=keys)
+    indices = pac.sort_indices(table, sort_keys=key)
     return take_table(table, indices)
 
 
@@ -40,7 +40,7 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[Union[int, List[int]]]
     """
 
     partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, [i] if isinstance(i, int) else i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds
@@ -69,7 +69,7 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
             dir = True if (not descending) else False
         else:
             dir = descending
-        colVals = table.column(colName).chunk(0).to_numpy()[left:right]
+        colVals = np.array(table.column(colName).to_pylist())[left:right]
         desiredVal = desired[i]
         prevleft = left
 

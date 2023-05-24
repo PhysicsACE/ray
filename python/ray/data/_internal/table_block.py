@@ -241,7 +241,7 @@ class TableBlockAccessor(BlockAccessor):
     def _sample(self, n_samples: int, key: "SortKeyT") -> Any:
         raise NotImplementedError
 
-    def sample(self, n_samples: int, key: "SortKeyT", ascending: bool) -> Any:
+    def sample(self, n_samples: int, key: "SortKeyT") -> Any:
         if key is None or callable(key):
             raise NotImplementedError(
                 f"Table sort key must be a column name, was: {key}"

@@ -142,7 +142,7 @@ class SimpleBlockAccessor(BlockAccessor):
     def builder() -> SimpleBlockBuilder:
         return SimpleBlockBuilder()
 
-    def sample(self, n_samples: int = 1, key: "SortKeyT" = None, ascending: bool = False) -> List[T]:
+    def sample(self, n_samples: int = 1, key: "SortKeyT" = None) -> List[T]:
         if not callable(key) and key is not None:
             raise NotImplementedError(
                 "Python sort key must be either None or a callable "

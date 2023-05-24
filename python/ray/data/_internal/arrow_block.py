@@ -716,7 +716,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
         return ret, ArrowBlockAccessor(ret).get_metadata(None, exec_stats=stats.build())
     
     def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> "pyarrow.Table":
-        concat_and_sort = get_concat_and_sort_transform(DataContext.get_current())
+        concat_and_sort = get_sort_transform(DataContext.get_current())
         return concat_and_sort(self._table, key, descending)
 
 

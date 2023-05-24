@@ -333,8 +333,10 @@ class SortStage(AllToAllStage):
                 blocks = block_list
             schema = ds.schema(fetch_if_missing=True)
             _validate_key_fn(schema, key)
-            key = normalize_keylist(key, descending)
-            return sort_impl(blocks, clear_input_blocks, key, descending, ctx)
+            normalizedKey = key
+            if not callable(key):
+                normalizedKey = normalize_keylist(key, descending)
+            return sort_impl(blocks, clear_input_blocks, normalizedKey, descending, ctx)
 
         super().__init__(
             "Sort",

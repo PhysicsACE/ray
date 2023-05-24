@@ -28,9 +28,15 @@ def check_polars_installed():
 
 def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     check_polars_installed()
-    col, _ = key[0]
+    col, order = [], []
+    for k in key:
+        col.append(k[0])
+        if k[1] == "ascending":
+            order.append(False)
+            continue
+        order.append(True)
     df = pl.from_arrow(table)
-    return df.sort(col, reverse=descending).to_arrow()
+    return df.sort(col, reverse=order).to_arrow()
 
 
 def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
@@ -55,7 +61,7 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[int], key: "SortKeyT",
     check_polars_installed()
     partitionIdx = cached_remote_fn(find_partitionIdx)
     df = pl.from_arrow(table)
-    bound_results = [partitionIdx.remote(df, [i] if isinstance(i, int) else i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(df, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds
@@ -113,5 +119,5 @@ def concat_and_sort(
         order.append(True)
 
     blocks = [pl.from_arrow(block) for block in blocks]
-    df = pl.concat(blocks).sort(col, descending=descending)
+    df = pl.concat(blocks).sort(col, reverse=order)
     return df.to_arrow()

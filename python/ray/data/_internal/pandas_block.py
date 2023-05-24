@@ -637,6 +637,7 @@ class PandasBlockAccessor(TableBlockAccessor):
         )
     
     def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> "pandas.DataFrame":
+        pandas = lazy_import_pandas()
         cols, orders = [], []
         for k in key:
             cols.append(k[0])
@@ -650,8 +651,8 @@ class PandasBlockAccessor(TableBlockAccessor):
         # else:
         #     keys.append(k[0], "ascending" if descending else "descending")
 
-        mergeddf = pandas.concat(self._table)
-        return mergeddf.sort_values(by=cols, ascending=orders)
+        # mergeddf = pandas.concat(self._table)
+        return self._table.sort_values(by=cols, ascending=orders)
     
 
 # def pandas_searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
@@ -732,7 +733,7 @@ def searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKey
     maintain ordering of the sorted table. 
     """
     partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds

@@ -125,7 +125,7 @@ def sample_boundaries(
     sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
     sample_items = BlockAccessor.for_block(samples).to_numpy()
     if len(sample_items.keys()) == 1:
-        sample_table = sample_items[sample_items.keys()[0]]
+        sample_table = sample_items[list(sample_items.keys())[0]]
         ret = [
             np.quantile(sample_table, q, interpolation="nearest")
             for q in np.linspace(0, 1, num_reducers)
@@ -168,8 +168,8 @@ def sort_impl(
     num_reducers = num_mappers
     # TODO(swang): sample_boundaries could be fused with a previous stage.
     boundaries = sample_boundaries(blocks_list, key, num_reducers, ctx)
-    if descending:
-        boundaries.reverse()
+    # if descending:
+    #     boundaries.reverse()
 
     context = DataContext.get_current()
     if context.use_push_based_shuffle:

@@ -160,7 +160,7 @@ def _validate_key_fn(
 def normalize_keylist(key: List[Any], descending: bool) -> List[Tuple[str, str]]:
     normalized = []
     if isinstance(key, str):
-        normalized.append((k, "descending" if descending else "ascending"))
+        normalized.append((key, "descending" if descending else "ascending"))
         return normalized
     for k in key:
         if isinstance(k, str):
