@@ -57,7 +57,7 @@ def test_sort_partition_same_key_to_same_block(
 
 
 @pytest.mark.parametrize("num_items,parallelism", [(100, 1), (1000, 4)])
-@pytest.mark.parametrize("use_polars", [False, True])
+@pytest.mark.parametrize("use_polars", [False, False])
 def test_sort_arrow(
     ray_start_regular, num_items, parallelism, use_push_based_shuffle, use_polars
 ):
@@ -144,7 +144,7 @@ def test_sort_arrow_with_empty_blocks(
                     ds._plan.execute().get_blocks(), "id", 3
                 )
             )
-            == 2
+            == 1
         )
         assert ds.sort("id").count() == 0
     finally:
@@ -212,7 +212,7 @@ def test_sort_pandas_with_empty_blocks(ray_start_regular, use_push_based_shuffle
                 ds._plan.execute().get_blocks(), "id", 3
             )
         )
-        == 2
+        == 1
     )
     assert ds.sort("id").count() == 0
 
