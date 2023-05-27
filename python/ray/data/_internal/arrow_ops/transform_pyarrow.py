@@ -61,27 +61,27 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
     """
 
     assert len(desired) == len(key)
+    assert len(desired) == 1
 
     left, right = 0, table.num_rows
     for i in range(len(desired)):
         colName = key[i][0]
         if key[i][1] == "ascending":
-            dir = True if (not descending) else False
+            dir = True 
         else:
-            dir = descending
-        colVals = np.array(table.column(colName).to_pylist())[left:right]
+            dir = False
+        colVals = table[colName][left:right]
         desiredVal = desired[i]
         prevleft = left
 
         if not dir:
-            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
-            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+            print("yepeeeee")
+            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))
+            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1)))
         else:
             left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
             right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
     
-    if descending:
-        return left
     return right
     
 
@@ -328,8 +328,10 @@ def concat(blocks: List["pyarrow.Table"]) -> "pyarrow.Table":
 def concat_and_sort(
     blocks: List["pyarrow.Table"], key: "SortKeyT", descending: bool
 ) -> "pyarrow.Table":
+    import pyarrow.compute as pac
+
     ret = concat(blocks)
-    indices = pyarrow.compute.sort_indices(ret, sort_keys=key)
+    indices = pac.sort_indices(ret, sort_keys=key)
     return take_table(ret, indices)
 
 

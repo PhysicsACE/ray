@@ -78,10 +78,7 @@ def get_concat_and_sort_transform(context: DataContext) -> Callable:
         return transform_pyarrow.concat_and_sort
     
 def get_searchsorted_transform(context: DataContext) -> Callable:
-    if context.use_polars:
-        return transform_polars.searchsorted
-    else:
-        return transform_pyarrow.searchsorted
+    return transform_pyarrow.searchsorted
 
 
 class ArrowRow(TableRow):
@@ -272,7 +269,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
             should_be_single_ndarray = self.is_tensor_wrapper()
         elif isinstance(columns, list):
             should_be_single_ndarray = (
-                columns == self._table_column_names and self.is_tensor_wrapper()
+                columns == self._table.column_names and self.is_tensor_wrapper()
             )
         else:
             columns = [columns]
@@ -461,6 +458,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
         if len(boundaries) == 0:
             return [table]
 
+        col, _ = key[0]
         partitions = []
         # For each boundary value, count the number of items that are less
         # than it. Since the block is sorted, these counts partition the items
@@ -468,15 +466,18 @@ class ArrowBlockAccessor(TableBlockAccessor):
         # partition[i]. If `descending` is true, `boundaries` would also be
         # in descending order and we only need to count the number of items
         # *greater than* the boundary value instead.
-        # if descending:
-        #     num_rows = len(table[col])
-        #     bounds = num_rows - np.searchsorted(
-        #         table[col], boundaries, sorter=np.arange(num_rows - 1, -1, -1)
-        #     )
-        # else:
-        #     bounds = np.searchsorted(table[col], boundaries)
+        if descending:
+            num_rows = len(table[col])
+            bounds = num_rows - np.searchsorted(
+                table[col], boundaries, sorter=np.arange(num_rows - 1, -1, -1)
+            )
+        else:
+            bounds = np.searchsorted(table[col], boundaries)
 
-        bounds = searchsorted(table, boundaries, key, descending)
+
+        bounds2 = searchsorted(table, boundaries, key, descending)
+        if not np.array_equal(bounds, bounds2):
+            print(boundaries, "bbbbbbbbbbbbbb", bounds, "fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", table[col], "keeeyyyyy", key)
         last_idx = 0
         for idx in bounds:
             partitions.append(table.slice(last_idx, idx - last_idx))

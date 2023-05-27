@@ -61,6 +61,7 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[int], key: "SortKeyT",
     check_polars_installed()
     partitionIdx = cached_remote_fn(find_partitionIdx)
     df = pl.from_arrow(table)
+    print("converted tablllelelelelele", df.get_column(key[0][0]).to_numpy())
     bound_results = [partitionIdx.remote(df, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
@@ -87,22 +88,20 @@ def find_partitionIdx(table: Any, desired: List[Any], key:"SortKeyT", descending
     for i in range(len(desired)):
         colName = key[i][0]
         if key[i][1] == "ascending":
-            dir = True if (not descending) else False
+            dir = True 
         else:
-            dir = descending
+            dir = False
         colVals = table.get_column(colName).to_numpy()[left:right]
         desiredVal = desired[i]
         prevleft = left
 
         if not dir:
-            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
-            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))
+            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1)))
         else:
             left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
             right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
     
-    if descending:
-        return left
     return right
 
 

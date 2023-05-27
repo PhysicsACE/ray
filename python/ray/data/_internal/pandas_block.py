@@ -759,20 +759,18 @@ def find_partitionIdx(table: "pandas.DataFrame", desired: List[Any], key:"SortKe
     for i in range(len(desired)):
         colName = key[i][0]
         if key[i][1] == "ascending":
-            dir = True if (not descending) else False
+            dir = True
         else:
-            dir = descending
+            dir = False
         colVals = table[colName].to_numpy()[left:right]
         desiredVal = desired[i]
         prevleft = left
 
         if not dir:
-            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
-            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))
+            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1)))
         else:
             left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
             right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
     
-    if descending:
-        return left
     return right

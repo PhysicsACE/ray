@@ -106,14 +106,17 @@ class SortTaskSpec(ExchangeTaskSpec):
         samples = [s for s in samples if len(s) > 0]
         # The dataset is empty
         if len(samples) == 0:
-            return [None] * (num_reducers - 1)
+            return [[None] * (num_reducers - 1)]
         builder = DelegatingBlockBuilder()
         for sample in samples:
             builder.add_block(sample)
         samples = builder.build()
         orderstr = "descending" if descending else "ascending"
+        cols = []
+        for k in key:
+            cols.append(k[0])
         sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
-        sample_items = BlockAccessor.for_block(samples).to_numpy()
+        sample_items = BlockAccessor.for_block(samples).to_numpy(cols)
         # column = key[0][0] if isinstance(key, list) else None
         # sample_items = BlockAccessor.for_block(samples).to_numpy(column)
         # sample_items = np.sort(sample_items)
@@ -128,14 +131,17 @@ class SortTaskSpec(ExchangeTaskSpec):
                 np.quantile(sample_table, q, interpolation="nearest")
                 for q in np.linspace(0, 1, num_reducers)
             ]
-            return ret[1:]
+            return [ret[1:]]
 
         sample_table = np.array([v for _, v in sample_items.items()])
-        ret = [
-            np.quantile(sample_table, q, interpolation="nearest", axis=1)
-            for q in np.linspace(0, 1, num_reducers)
-        ]
-        return ret[1:]
+        ret = []
+        for _, values in sample_items.items():
+            colCompute = [
+                np.quantile(values, q, interpolation="nearest")
+                for q in np.linspace(0, 1, num_reducers)
+            ]
+            ret.append(colCompute[1:])
+        return ret
 
 
 def _sample_block(block: Block, n_samples: int, key: SortKeyT) -> Block:

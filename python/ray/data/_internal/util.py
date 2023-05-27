@@ -525,20 +525,19 @@ def custom_searchsorted(table: np.ndarray, val: List[Any], order: List[bool], de
     left, right = 0, table.shape[-1]
     for i in range(len(val)):
         if order[i][1] == "ascending":
-            dir = True if (not descending) else False
+            dir = True 
         else:
-            dir = descending
+            dir = False
         colVals = table[i][left:right]
         desiredVal = val[i]
         prevleft = left
+        numrows = right - left
 
         if not dir:
-            left = prevleft + np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1))
-            right = prevleft + np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1))
+            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))
+            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1)))
         else:
             left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
             right = prevleft + np.searchsorted(colVals, desiredVal, side="right")
-    
-    if descending:
-        return left
+
     return right

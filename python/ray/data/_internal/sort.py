@@ -27,6 +27,8 @@ from ray.data._internal.progress_bar import ProgressBar
 from ray.data._internal.push_based_shuffle import PushBasedShufflePlan
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.data._internal.shuffle import ShuffleOp, SimpleShufflePlan
+from ray.data._internal.util import row_zip
+
 from ray.data.block import Block, BlockAccessor, BlockExecStats, BlockMetadata, normalize_keylist
 from ray.data.context import DataContext
 from ray.types import ObjectRef
@@ -116,28 +118,34 @@ def sample_boundaries(
     samples = [s for s in samples if len(s) > 0]
     # The dataset is empty
     if len(samples) == 0:
-        return [None] * (num_reducers - 1)
+        return [[None] * (num_reducers - 1)]
     builder = DelegatingBlockBuilder()
     for sample in samples:
         builder.add_block(sample)
     samples = builder.build()
     orderstr = "descending" if descending else "ascending"
+    cols = []
+    for k in key:
+        cols.append(k[0])
     sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
-    sample_items = BlockAccessor.for_block(samples).to_numpy()
+    sample_items = BlockAccessor.for_block(samples).to_numpy(cols)
     if len(sample_items.keys()) == 1:
         sample_table = sample_items[list(sample_items.keys())[0]]
         ret = [
             np.quantile(sample_table, q, interpolation="nearest")
             for q in np.linspace(0, 1, num_reducers)
         ]
-        return ret[1:]
+        return [ret[1:]]
 
     sample_table = np.array([v for _, v in sample_items.items()])
-    ret = [
-        np.quantile(sample_table, q, interpolation="nearest", axis=1)
-        for q in np.linspace(0, 1, num_reducers)
-    ]
-    return ret[1:]
+    ret = []
+    for _, values in sample_items.items():
+        colCompute = [
+            np.quantile(values, q, interpolation="nearest")
+            for q in np.linspace(0, 1, num_reducers)
+        ]
+        ret.append(colCompute[1:])
+    return ret
 
 
 # Note: currently the map_groups() API relies on this implementation
@@ -167,7 +175,18 @@ def sort_impl(
     # Use same number of output partitions.
     num_reducers = num_mappers
     # TODO(swang): sample_boundaries could be fused with a previous stage.
-    boundaries = sample_boundaries(blocks_list, key, num_reducers, ctx)
+    boundaries = sample_boundaries(blocks_list, key, num_reducers, ctx, descending)
+    print(len(boundaries), type(boundaries))
+    orderedBoundaries = []
+    for i in range(len(key)):
+        if key[i][1] == "descending":
+            orderedBoundaries.append(list(reversed(boundaries[i])))
+            continue
+        orderedBoundaries.append(boundaries[i])
+    if len(orderedBoundaries) == 1:
+        orderedBoundaries = orderedBoundaries[0]
+    else:
+        orderedBoundaries = row_zip(orderedBoundaries)
     # if descending:
     #     boundaries.reverse()
 
@@ -177,7 +196,7 @@ def sort_impl(
     else:
         sort_op_cls = SimpleSortOp
     sort_op = sort_op_cls(
-        map_args=[boundaries, key, descending], reduce_args=[key, descending]
+        map_args=[orderedBoundaries, key, descending], reduce_args=[key, descending]
     )
     return sort_op.execute(
         blocks,
