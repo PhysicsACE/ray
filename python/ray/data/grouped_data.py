@@ -28,6 +28,7 @@ from ray.data.block import (
     BlockMetadata,
     KeyType,
     UserDefinedFunction,
+    normalize_keylist
 )
 from ray.data.context import DataContext
 from ray.data.dataset import DataBatch, Dataset
@@ -133,7 +134,7 @@ class GroupedData:
         Use the ``Dataset.groupby()`` method to construct one.
         """
         self._dataset = dataset
-        self._key = key
+        self._key = normalize_keylist(key, False)
 
     def __repr__(self) -> str:
         return (
@@ -178,6 +179,10 @@ class GroupedData:
                     num_reducers,
                     task_ctx,
                 )
+            if len(boundaries) == 1:
+                boundaries = boundaries[0]
+            else:
+                boundaries = row_zip(boundaries)
             ctx = DataContext.get_current()
             if ctx.use_push_based_shuffle:
                 shuffle_op_cls = PushBasedGroupbyOp

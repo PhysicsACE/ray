@@ -91,8 +91,8 @@ def _validate_key_fn(
                 "The column '{}' does not exist in the "
                 "schema '{}'.".format(key, schema)
             )
-    elif ctx.strict_mode:
-        raise StrictModeError(f"In Ray 2.5, the key must be a string, was: {key}")
+    # elif ctx.strict_mode:
+    #     raise StrictModeError(f"In Ray 2.5, the key must be a string, was: {key}")
     elif key is None:
         if not is_simple_format:
             raise ValueError(
@@ -146,7 +146,7 @@ def _validate_key_fn(
                         "schema '{}'.".format(col, schema)
                     )
                 order = k[1]
-                if order != "ascending" or order != "descending":
+                if order != "ascending" and order != "descending":
                     raise ValueError(
                         "The order must be 'ascending' or 'descending.'"
                         "Received '{}'.".format(order)

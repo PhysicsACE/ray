@@ -40,7 +40,7 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[Union[int, List[int]]]
     """
 
     partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds
@@ -61,7 +61,6 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
     """
 
     assert len(desired) == len(key)
-    assert len(desired) == 1
 
     left, right = 0, table.num_rows
     for i in range(len(desired)):
@@ -76,8 +75,8 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
 
         if not dir:
             print("yepeeeee")
-            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))
-            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, -1, -1)))
+            left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, prevleft - 1, -1)))
+            right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, prevleft - 1, -1)))
         else:
             left = prevleft + np.searchsorted(colVals, desiredVal, side="left")
             right = prevleft + np.searchsorted(colVals, desiredVal, side="right")

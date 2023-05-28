@@ -432,21 +432,19 @@ class PandasBlockAccessor(TableBlockAccessor):
         def extract_key(row) -> Union[Any, List[Any]]:
             currVals = []
             for k in key_cols:
-                currVals.extend(row[k])
-            return currVals[0] if len(currVals) == 1 else currVals
+                currVals.append(row[k])
+            return currVals
         
         def pretty_grouping(k: Union[Any, List[Any]]) -> str:
             if isinstance(k, str):
-                return json.dumps({key: k})
+                return json.dumps({key_cols[0]: k})
             elif isinstance(k, list):
-                keyDict = {key[0][0]: k[0]}
+                keyDict = {key_cols[0]: k[0]}
                 for i in range(1, len(k)):
-                    keyDict[key[i][0]] = k[i]
+                    keyDict[key_cols[i]] = k[i]
                 return json.dumps(keyDict)
             else:
-                raise ValueError(
-                "Unexpected grouping key found. Should have been checked"
-            )
+                return json.dumps({key_cols[0]: k})
 
         def serializedKey() -> str:
             if isinstance(key, str):
@@ -493,7 +491,8 @@ class PandasBlockAccessor(TableBlockAccessor):
             # Build the row.
             row = {}
             if key is not None:
-                row[serializedKey()] = pretty_grouping(group_key)
+                for i in range(len(key_cols)):
+                    row[key_cols[i]] = group_key[i]
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -503,6 +502,8 @@ class PandasBlockAccessor(TableBlockAccessor):
                     name = self._munge_conflict(name, count[name])
                 count[name] += 1
                 row[name] = accumulator
+
+            print("INNNNNNIIIITTTROW", row)
 
             builder.add(row)
 
@@ -530,6 +531,38 @@ class PandasBlockAccessor(TableBlockAccessor):
         return ret, PandasBlockAccessor(ret).get_metadata(
             None, exec_stats=stats.build()
         )
+    
+    # def demangle_row(block):
+
+    #     """The grouping keys were serialized for the intermediate computations.
+    #     Once the final reduce phases have been completed, we need to build the 
+    #     final rows by extracting the row keys and building their respective columns"""
+
+    #     key_fn = (lambda r: r[r._row.columns[0]])
+
+    #     get_aggs = (lambda r: r[r._row.columns[1:]])
+
+    #     iterator = PandasBlockAccessor(block).iter_rows(public_row_format=False)
+    #     next_row = None
+    #     while True:
+    #         try:
+    #             row = {}
+    #             if next_row is None:
+    #                 next_row = next(iterator)
+    #             groupingkey = key_fn(next_row)
+    #             toDict = json.loads(groupingkey)
+    #             for k, v in toDict.items():
+    #                 row[k] = v
+
+    #             aggs = get_aggs(next_row)
+    #             for c in aggs:
+    #                 row[c] = next_row[c]
+                
+    #             yield row
+                
+    #         except StopIteration:
+    #             break
+
 
     @staticmethod
     def aggregate_combined_blocks(
@@ -559,7 +592,7 @@ class PandasBlockAccessor(TableBlockAccessor):
         """
 
         stats = BlockExecStats.builder()
-        key_fn = (lambda r: r[r._row.columns[0]]) if key is not None else (lambda r: 0)
+        key_fn = (lambda r: tuple(r[r._row.columns[i]] for i in range(len(key)))) if key is not None else (lambda r: 0)
 
         iter = heapq.merge(
             *[
@@ -574,8 +607,11 @@ class PandasBlockAccessor(TableBlockAccessor):
             try:
                 if next_row is None:
                     next_row = next(iter)
+                
                 next_key = key_fn(next_row)
-                next_key_name = next_row._row.columns[0] if key is not None else None
+                if not isinstance(next_key, str):
+                    print("AfterROOOOOOOOOOO", next_row)
+                next_key_name = tuple(next_row._row.columns[i] for i in range(len(key))) if key is not None else None
 
                 def gen():
                     nonlocal iter
@@ -615,9 +651,9 @@ class PandasBlockAccessor(TableBlockAccessor):
                 # Build the row.
                 row = {}
                 if key is not None:
-                    toDict = json.loads(next_key)
-                    for k, v in toDict.items():
-                        row[k] = v
+                    # row[next_key_name] = next_key
+                    for i in range(len(next_key_name)):
+                        row[next_key_name[i]] = next_key[i]
 
                 for agg, agg_name, accumulator in zip(
                     aggs, resolved_agg_names, accumulators
@@ -730,10 +766,13 @@ class PandasBlockAccessor(TableBlockAccessor):
 def searchsorted(table: "pandas.DataFrame", boundaries: List[int], key: "SortKeyT", descending: bool) -> List[int]:
     """
     This method finds the index to place a row containing a set of columnar values to 
-    maintain ordering of the sorted table. 
+    maintain ordering of the sorted table. This is currently an open issue for the pandas
+    framework, see here https://github.com/pandas-dev/pandas/issues/42872 and this is a
+    currently workaround/implementation that utilizes numpy to essentially zone in 
+    on the correct row index that maintains the orders with respect to an arbitrary key.
     """
     partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
+    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
     bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
     bounds = bounds_bar.fetch_until_complete(bound_results)
     return bounds

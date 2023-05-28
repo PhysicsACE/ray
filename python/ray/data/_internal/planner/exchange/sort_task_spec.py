@@ -89,8 +89,8 @@ class SortTaskSpec(ExchangeTaskSpec):
         partition the domain into ranges with approximately equally many elements.
         """
         # TODO(Clark): Support multiple boundary sampling keys.
-        if isinstance(key, list) and len(key) > 1:
-            raise ValueError("Multiple boundary sampling keys not supported.")
+        # if isinstance(key, list) and len(key) > 1:
+        #     raise ValueError("Multiple boundary sampling keys not supported.")
 
         n_samples = int(num_reducers * 10 / len(blocks))
 

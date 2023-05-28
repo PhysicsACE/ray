@@ -476,10 +476,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
 
         bounds2 = searchsorted(table, boundaries, key, descending)
-        if not np.array_equal(bounds, bounds2):
-            print(boundaries, "bbbbbbbbbbbbbb", bounds, "fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", table[col], "keeeyyyyy", key)
+        # print(boundaries, "bbbbbbbbbbbbbb", bounds, "fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", table[col], "keeeyyyyy", key)
         last_idx = 0
-        for idx in bounds:
+        for idx in bounds2:
             partitions.append(table.slice(last_idx, idx - last_idx))
             last_idx = idx
         partitions.append(table.slice(last_idx))
@@ -516,21 +515,19 @@ class ArrowBlockAccessor(TableBlockAccessor):
         def extract_key(row) -> Union[Any, List[Any]]:
             currVals = []
             for k in key_cols:
-                currVals.extend(row[k])
-            return currVals[0] if len(currVals) == 1 else currVals
+                currVals.append(row[k])
+            return currVals
         
         def pretty_grouping(k: Union[Any, List[Any]]) -> str:
             if isinstance(k, str):
-                return json.dumps({key: k})
+                return json.dumps({key_cols[0]: k})
             elif isinstance(k, list):
-                keyDict = {key[0][0]: k[0]}
+                keyDict = {key_cols[0]: k[0]}
                 for i in range(1, len(k)):
-                    keyDict[key[i][0]] = k[i]
+                    keyDict[key_cols[i]] = k[i]
                 return json.dumps(keyDict)
             else:
-                raise ValueError(
-                "Unexpected grouping key found. Should have been checked"
-            )
+                return json.dumps({key_cols[0]: k})
 
         def serializedKey() -> str:
             if isinstance(key, str):
@@ -577,7 +574,8 @@ class ArrowBlockAccessor(TableBlockAccessor):
             # Build the row.
             row = {}
             if key is not None:
-                row[serializedKey()] = pretty_grouping(group_key)
+                for i in range(len(key_cols)):
+                    row[key_cols[i]] = group_key[i]
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -638,7 +636,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         stats = BlockExecStats.builder()
         key_fn = (
-            (lambda r: r[r._row.schema.names[0]]) if key is not None else (lambda r: 0)
+            (lambda r: tuple(r[r._row.schema.names[i]] for i in range(len(key)))) if key is not None else (lambda r: 0)
         )
 
         iter = heapq.merge(
@@ -655,9 +653,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
                 if next_row is None:
                     next_row = next(iter)
                 next_key = key_fn(next_row)
-                next_key_name = (
-                    next_row._row.schema.names[0] if key is not None else None
-                )
+                next_key_name = tuple(next_row._row.schema.names[i] for i in range(len(key))) if key is not None else None
 
                 def gen():
                     nonlocal iter
@@ -697,9 +693,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
                 # Build the row.
                 row = {}
                 if key is not None:
-                    toDict = json.loads(next_key)
-                    for k, v in toDict.items():
-                        row[k] = v
+                    # row[next_key_name] = next_key
+                    for i in range(len(next_key_name)):
+                        row[next_key_name[i]] = next_key[i]
 
                 for agg, agg_name, accumulator in zip(
                     aggs, resolved_agg_names, accumulators
