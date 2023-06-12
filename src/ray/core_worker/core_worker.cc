@@ -2139,7 +2139,11 @@ Status CoreWorker::CreatePlacementGroup(
       }
     }
   }
-  const PlacementGroupID placement_group_id = PlacementGroupID::Of(GetCurrentJobId());
+
+  const auto next_task_index = worker_context_.GetNextTaskIndex();
+  const PlacementGroupID placement_group_id = PlacementGroupID::Of(GetCurrentJobId(),
+                                                                   worker_context_.GetCurrentTaskID(),
+                                                                   next_task_index);
   PlacementGroupSpecBuilder builder;
   builder.SetPlacementGroupSpec(
       placement_group_id,
@@ -2153,6 +2157,15 @@ Status CoreWorker::CreatePlacementGroup(
       worker_context_.CurrentActorDetached());
   PlacementGroupSpecification placement_group_spec = builder.Build();
   *return_placement_group_id = placement_group_id;
+
+  // AddLocalPlacementHandleReference(placement_group_id,
+  //                                 CurrentCallSite(),
+  //                                 rpc_address_,
+  //                                 placement_group_creation_options.is_detached);
+
+  // OutOfScopePGCallback(placement_group_id);
+
+
   RAY_LOG(INFO) << "Submitting Placement Group creation to GCS: " << placement_group_id;
   const auto status =
       gcs_client_->PlacementGroups().SyncCreatePlacementGroup(placement_group_spec);
@@ -2166,6 +2179,11 @@ Status CoreWorker::CreatePlacementGroup(
   } else {
     return status;
   }
+
+  /// Create a callback for GCS to initialize the create the handle once the group is created
+  /// We will have to poll the owner of the placement group from GCS to see if it is still in 
+  /// scope so the callback will be to be called from the poll request is made to ensure that
+  /// the initail reference to the handle exits. 
 }
 
 Status CoreWorker::RemovePlacementGroup(const PlacementGroupID &placement_group_id) {
@@ -2412,6 +2430,56 @@ Status CoreWorker::KillActorLocalMode(const ActorID &actor_id) {
 void CoreWorker::RemoveActorHandleReference(const ActorID &actor_id) {
   ObjectID actor_handle_id = ObjectID::ForActorHandle(actor_id);
   reference_counter_->RemoveLocalReference(actor_handle_id, nullptr);
+}
+
+void CoreWorker::RemovePlacementHandleReference(const PlacementGroupID &placement_id) {
+  ObjectID pg_handle_id = placement_id.GeneratePlacementHandle();
+  reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+}
+
+void CoreWorker::AddLocalPlacementHandleReference(const PlacementGroupID &placement_group_id,
+                                                  const std::string &call_site,
+                                                  const rpc::Address &caller_address,
+                                                  bool is_detached) {
+ 
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  if (!is_detached) {
+    reference_counter_->AddOwnedObject(pg_handle_id,
+                                       {},
+                                       caller_address,
+                                       call_site,
+                                       -1,
+                                       true,
+                                       false);
+  }
+
+  reference_counter_->AddLocalReference(pg_handle_id, call_site);
+
+}
+
+void CoreWorker::AddPlacementOptionReference(std::unique_ptr<PlacementGroupID> &placement_group_id) {
+  const auto pg_object_id = placement_group_id->GeneratePlacementHandle();
+  reference_counter_->AddPlacementOptionReference(pg_object_id);
+}
+
+void CoreWorker::RemovePlacementOptionReference(std::unique_ptr<PlacementGroupID> &placement_group_id) {
+  const auto pg_object_id = placement_group_id->GeneratePlacementHandle();
+  reference_counter_->DecrementPlacementOptionReference(pg_object_id);
+}
+
+// void CoreWorker::AddBorrowedPlacementReference(std::unique_ptr<PlacementGroupID> &placement_group_id) {
+//   const auto pg_object_id = placement_group_id->GeneratePlacementHandle();
+//   reference_counter_->
+// }
+
+void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  auto callback = [this, placement_group_id](
+    const ObjectID &object_id
+  ) {
+    RemovePlacementGroup(placement_group_id);
+  };
+  reference_counter_->SetDeleteCallback(pg_handle_id, callback);
 }
 
 ActorID CoreWorker::DeserializeAndRegisterActorHandle(const std::string &serialized,

@@ -3209,6 +3209,11 @@ cdef class CoreWorker:
         CCoreWorkerProcess.GetCoreWorker().RemoveActorHandleReference(
             c_actor_id)
 
+    def remove_placement_group_handle_reference(self, PlacementGroupID placement_group_id):
+        cdef:
+            CPlacementGroupID c_placement_group_id = placement_group_id.native()
+        CCoreWorkerProcess.GetCoreWorker().RemovePlacementHandleReference(c_placement_group_id)
+
     cdef make_actor_handle(self, ActorHandleSharedPtr c_actor_handle):
         worker = ray._private.worker.global_worker
         worker.check_connected()

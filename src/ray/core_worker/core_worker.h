@@ -922,6 +922,56 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   /// \param[in] actor_id The actor ID to decrease the reference count for.
   void RemoveActorHandleReference(const ActorID &actor_id);
 
+  /// Function to reduce the 
+
+  /// Remove a local reference to the placement group handle. This should be 
+  /// triggered by the frontend language when the handles goes out of scope or
+  /// if the variable was manually deleted by the client.
+  ///
+  /// \param[in] placement_group_id The placment group ID to decrease the reference for.
+  void RemovePlacementHandleReference(const PlacementGroupID &placement_group_id);
+
+  /// Add a local reference to this placement group. This should be called upon the 
+  /// initial creation of a placement group and upon the invocation of get_placement_group
+  /// to generate another local handle in the frontend
+  ///
+  /// \param[in] placement_group_id The placment group ID to increase the reference for.
+  void AddLocalPlacementHandleReference(const PlacementGroupID &placement_group_id,
+                                        const std::string &call_site,
+                                        const rpc::Address &caller_address,
+                                        bool is_detached);
+
+  /// Add reference when a task/actor task is remotely called with this pg as the scheduling strategy
+  ///
+  /// \param[in] placement_group_id The placment group ID to increase the reference for.
+  void AddPlacementOptionReference(std::unique_ptr<PlacementGroupID> &placement_group_id);
+
+  /// Decrease the reference count for a specified placement group handle.
+  /// Should be called by the language frontend when an existing handle goes
+  /// out of scope.
+  ///
+  /// \param[in] placement_group_id The placment group ID to decrease the reference for.
+  void RemovePlacementOptionReference(std::unique_ptr<PlacementGroupID> &placement_group_id);
+
+  /// When an actor is instantiated with a placement group scheduling strategy, we consider that 
+  /// as a borrowed reference which is removed when the respective actor is killed or goes out of scope
+  ///
+  /// \param[in] placement_group_id The placement group ID to increment a borrowed ref for
+  void AddBorrowedPlacementReference(std::unique_ptr<PlacementGroupID> &placement_group_id);
+
+  /// Decrease the borrow reference of this placement group. This is called when either an actor that
+  /// was instantiated with this PG is manually killed on the frontend or when an actor is automatically
+  /// garbarge collected.
+  /// \param[in] placement_group_id The placement group ID to decrese the borrowed ref for
+  void RemoveBorrowedPlacementReference(std::unique_ptr<PlacementGroupID> &placement_group_id);
+
+  /// Return a callback for when the placement group goes out of scope to handle the automatice freeing of reserved
+  /// resources corresponding to the respective placement group
+  ///
+  /// \param[in] placement_group_id The placement group ID for which to generate the callback for
+  /// \param[out] std::function<void(std::unique_ptr<PlacementGroupID> &)> The callback to be used when the PG goes out of scope
+  void OutOfScopePGCallback(const PlacementGroupID &placement_group_id);
+
   /// Add an actor handle from a serialized string.
   ///
   /// This should be called when an actor handle is given to us by another task

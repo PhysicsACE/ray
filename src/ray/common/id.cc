@@ -305,11 +305,16 @@ uint32_t JobID::ToInt() {
   return value;
 }
 
-PlacementGroupID PlacementGroupID::Of(const JobID &job_id) {
+PlacementGroupID PlacementGroupID::Of(const JobID &job_id,
+                                      const TaskID &parent_task_id,
+                                      const size_t parent_task_counter) {
   // No need to set transport type for a random object id.
   // No need to assign put_index/return_index bytes.
-  std::string data(PlacementGroupID::kUniqueBytesLength, 0);
-  FillRandom(&data);
+  auto data = GenerateUniqueBytes(job_id,
+                                  parent_task_id,
+                                  parent_task_counter,
+                                  absl::GetCurrentTimeNanos(),
+                                  PlacementGroupID::kUniqueBytesLength);
   std::copy_n(job_id.Data(), JobID::kLength, std::back_inserter(data));
   RAY_CHECK(data.size() == kLength);
   return PlacementGroupID::FromBinary(data);
@@ -319,6 +324,21 @@ JobID PlacementGroupID::JobId() const {
   RAY_CHECK(!IsNil());
   return JobID::FromBinary(std::string(
       reinterpret_cast<const char *>(this->Data() + kUniqueBytesLength), JobID::kLength));
+}
+
+ObjectID PlacementGroupID::GeneratePlacementHandle() const {
+  std::string data(8, 0);
+  FillNil(&data);
+  const uint8_t* id = this->Data();
+  std::copy_n(id, kLength, std::back_inserter(data));
+  return ObjectID::FromIndex(TaskID::FromBinary(data), 1);
+}
+
+PlacementGroupID PlacementGroupID::FromObjectID(const ObjectID &object_id, const uint8_t privateID) {
+  auto beg = reinterpret_cast<const char *>(privateID) + ObjectID::kLength -
+             kLength - 1;
+  std::string actor_id(beg, beg + kLength);
+  return PlacementGroupID::FromBinary(actor_id);
 }
 
 #define ID_OSTREAM_OPERATOR(id_type)                              \

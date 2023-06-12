@@ -441,6 +441,29 @@ void ReferenceCounter::UpdateSubmittedTaskReferences(
       argument_ids_to_remove, /*release_lineage=*/true, deleted);
 }
 
+void ReferenceCounter::AddPlacementOptionReference(const ObjectID &object_id) {
+
+  if (object_id.IsNil()) {
+    return;
+  }
+  absl::MutexLock lock(&mutex_);
+  auto it = object_id_refs_.find(object_id);
+  it->second.submitted_task_ref_count++;
+  RAY_LOG(DEBUG) << "Add Option reference " << object_id;
+  PRINT_REF_COUNT(it);
+}
+
+void ReferenceCounter::DecrementPlacementOptionReference(const ObjectID &object_id) {
+  if (object_id.IsNil()) {
+    return;
+  }
+  absl::MutexLock lock(&mutex_);
+  auto it = object_id_refs_.find(object_id);
+  it->second.submitted_task_ref_count--;
+  RAY_LOG(DEBUG) << "Add Option reference " << object_id;
+  PRINT_REF_COUNT(it);
+}
+
 void ReferenceCounter::UpdateResubmittedTaskReferences(
     const std::vector<ObjectID> return_ids, const std::vector<ObjectID> &argument_ids) {
   absl::MutexLock lock(&mutex_);

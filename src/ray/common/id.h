@@ -348,9 +348,21 @@ class PlacementGroupID : public BaseID<PlacementGroupID> {
   /// \param job_id The job id to which this actor belongs.
   ///
   /// \return The random `PlacementGroupID`.
-  static PlacementGroupID Of(const JobID &job_id);
+  static PlacementGroupID Of(const JobID &job_id,
+                             const TaskID &parent_task_id,
+                             const size_t parent_task_counter);
 
   static PlacementGroupID FromRandom() = delete;
+
+  /// Compute the ObjectID used as a alias for a placegroup handles lifetime.
+  /// Note that this object does not have a value and is only used for reference
+  /// counting purposes. 
+  ///
+  /// \param placement_group_id The ID of the placement group to track
+  /// \return The resulting ObjectID
+  ObjectID GeneratePlacementHandle() const;
+
+  static PlacementGroupID FromObjectID(const ObjectID &object_id, const uint8_t privateID);
 
   /// Constructor of `PlacementGroupID`.
   PlacementGroupID() : BaseID() {}

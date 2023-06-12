@@ -126,9 +126,24 @@ class ReferenceCounter : public ReferenceCounterInterface,
       const std::vector<ObjectID> &argument_ids_to_remove = std::vector<ObjectID>(),
       std::vector<ObjectID> *deleted = nullptr) LOCKS_EXCLUDED(mutex_);
 
+  /// For placement group reference counting, submitted references are counted
+  /// when a placement group is provided as the scheduling strategy for an actor
+  /// of task. Hence, we increment the submitted task arg count and we will
+  /// decrement it after the task is done executing. 
+  void AddPlacementOptionReference(const ObjectID &placement_id) 
+  LOCKS_EXCLUDED(mutex_);
+
+  /// Decrement the submitted ref count for this placement group once
+  /// a task or actor task has been submitted. ALso, when an actor that 
+  /// was instantiated with this pg goes out of scope and is deleted from
+  /// the object store, we decrement that reference as well to keep track
+  /// of all the actors and task the rely on this pg handle.
+  void DecrementPlacementOptionReference(const ObjectID &placement_id)
+  LOCKS_EXCLUDED(mutex_);
+
   /// Add references for the object dependencies of a resubmitted task. This
   /// does not increment the arguments' lineage ref counts because we should
-  /// have already incremented them when the task was first submitted.
+  /// have already incremented them when the task was first submitted. 
   ///
   /// \param[in] argument_ids The arguments of the task to add references for.
   void UpdateResubmittedTaskReferences(const std::vector<ObjectID> return_ids,

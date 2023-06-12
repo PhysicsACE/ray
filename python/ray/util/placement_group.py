@@ -115,6 +115,22 @@ class PlacementGroup:
     def __hash__(self):
         return hash(self.id)
 
+    """We want to free up the PG resources when all of its handles go out of scope
+    similar to actor handles."""
+    def __del__(self):
+        try:
+            # Mark that this placement group handle has gone out of scope. Once all pg
+            # handles are out of scope, the pg resources will be freed up automatically.
+            if ray._private.worker:
+                worker = ray._private.worker.global_worker
+                if worker.connected and hasattr(worker, "core_worker"):
+                    worker.core_worker.remove_placement_group_handle_reference(self.id)
+        except AttributeError:
+            # Suppress the attribtue error which is caused by
+            # python destruction ordering issue.
+            # It only happen when python exits.
+            pass
+
 
 @client_mode_wrap
 def _call_placement_group_ready(pg_id: PlacementGroupID, timeout_seconds: int) -> bool:
