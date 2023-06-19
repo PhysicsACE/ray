@@ -449,7 +449,7 @@ void ReferenceCounter::AddPlacementOptionReference(const ObjectID &object_id) {
   absl::MutexLock lock(&mutex_);
   auto it = object_id_refs_.find(object_id);
   it->second.submitted_task_ref_count++;
-  RAY_LOG(DEBUG) << "Add Option reference " << object_id;
+  RAY_LOG(DEBUG) << "Add PG Option reference " << object_id;
   PRINT_REF_COUNT(it);
 }
 
@@ -460,8 +460,35 @@ void ReferenceCounter::DecrementPlacementOptionReference(const ObjectID &object_
   absl::MutexLock lock(&mutex_);
   auto it = object_id_refs_.find(object_id);
   it->second.submitted_task_ref_count--;
-  RAY_LOG(DEBUG) << "Add Option reference " << object_id;
+  RAY_LOG(DEBUG) << "Add PG Option reference " << object_id;
   PRINT_REF_COUNT(it);
+}
+
+/// Add an ActorID that required the specified placementgroup upon instantiation
+void ReferenceCounter::AddPlacementRequiredReference(const ObjectID &placement_id,
+                                                     const ActorID &actor_id) {
+
+  if (placement_id.IsNil() || actor_id.IsNil()) {
+    return;
+  }
+
+  auto it = object_id_refs_.find(placement_id);
+  RAY_CHECK(it != object_id_refs_.end()) << placement_id;
+  it->second.mutable_required()->required.insert(actor_id).second;
+  RAY_LOG(DEBUG) << "Add Required Actor Reference" << placement_id;
+
+}
+
+void ReferenceCounter::RemovePlacementRequiredReference(const ObjectID &placement_id,
+                                                        const ActorID &actor_id) {
+  
+  if (placement_id.IsNil() || actor_id.IsNil()) {
+    return;
+  }
+
+  auto it = object_id_refs_.find(placement_id);
+  RAY_CHECK(it->second.mutable_required()->required.erase(actor_id));
+
 }
 
 void ReferenceCounter::UpdateResubmittedTaskReferences(

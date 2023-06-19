@@ -141,6 +141,17 @@ class ReferenceCounter : public ReferenceCounterInterface,
   void DecrementPlacementOptionReference(const ObjectID &placement_id)
   LOCKS_EXCLUDED(mutex_);
 
+  /// Add an actor for which the specified object is required.
+  void AddPlacementRequiredReference(const ObjectID &placement_id,
+                                     const ActorID &actor_id)
+  LOCKS_EXCLUDED(mutex_);
+
+  /// Remove an actor for which the specified object is required. Used
+  /// when an actor either goes out of scope or is manually killed. 
+  void RemovePlacementRequiredReference(const ObjectID &placement_id,
+                                        const ActorID &actor_id)
+  LOCKS_EXCLUDED(mutex_);
+
   /// Add references for the object dependencies of a resubmitted task. This
   /// does not increment the arguments' lineage ref counts because we should
   /// have already incremented them when the task was first submitted. 
@@ -604,6 +615,19 @@ class ReferenceCounter : public ReferenceCounterInterface,
     absl::flat_hash_set<rpc::WorkerAddress> borrowers;
   };
 
+  /// Contains information about all the actors that require this object.
+  /// Currently used to store actors that are instantiated for a specefic
+  /// placement group handle for PG lifecycle management. 
+  struct RequiredInfo {
+    /// A List of Actors/processes that require this object to function. This 
+    /// is currently only used for PG lifecycle management to automatically free
+    /// PG reserved resources. We add an ActorID to this set when an actor is
+    /// instantiated in the frontend with a specific placement group. We keep track
+    /// of the specific actors lifecycle and when it goes out of scope or is manually
+    /// killed in the frontend, we remove its respective ActorID from this set. 
+    absl::flat_hash_set<ActorID> required;
+  };
+
   struct Reference {
     /// Constructor for a reference whose origin is unknown.
     Reference() {}
@@ -653,6 +677,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
       bool is_nested = nested().contained_in_borrowed_ids.size();
       bool has_borrowers = borrow().borrowers.size() > 0;
       bool was_stored_in_objects = borrow().stored_in_objects.size() > 0;
+      bool has_required = required().required.size() > 0;
 
       bool has_lineage_references = false;
       if (lineage_pinning_enabled && owned_by_us && !is_reconstructable) {
@@ -660,7 +685,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
       }
 
       return !(in_scope || is_nested || has_nested_refs_to_report || has_borrowers ||
-               was_stored_in_objects || has_lineage_references);
+               was_stored_in_objects || has_lineage_references || has_required);
     }
 
     /// Whether the Reference can be deleted. A Reference can only be deleted
@@ -693,6 +718,21 @@ class ReferenceCounter : public ReferenceCounterInterface,
         borrow_info = std::make_unique<BorrowInfo>();
       }
       return borrow_info.get();
+    }
+
+    const RequiredInfo &required() const {
+      if (required_info == nullptr) {
+        static auto *default_info = new RequiredInfo();
+        return *default_info;
+      }
+      return *required_info;
+    }
+
+    RequiredInfo *mutable_required() {
+      if (required_info == nullptr) {
+        required_info = std::make_unique<RequiredInfo>();
+      }
+      return required_info.get();
     }
 
     /// Access NestedReferenceCount without modifications.
@@ -760,6 +800,8 @@ class ReferenceCounter : public ReferenceCounterInterface,
     /// Metadata related to borrowing.
     std::unique_ptr<BorrowInfo> borrow_info;
 
+    /// Metadata related to required Actors/Objects
+    std::unique_ptr<RequiredInfo> required_info;
     /// Callback that will be called when this ObjectID no longer has
     /// references.
     std::function<void(const ObjectID &)> on_delete;

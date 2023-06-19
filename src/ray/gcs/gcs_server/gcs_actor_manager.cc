@@ -176,6 +176,10 @@ ActorID GcsActor::GetActorID() const {
   return ActorID::FromBinary(actor_table_data_.actor_id());
 }
 
+PlacementGroupID GcsActor::GetPlacementGroupID() const {
+  return PlacementGroupID::FromBinary(actor_table_data_.placement_group_id());
+}
+
 bool GcsActor::IsDetached() const { return actor_table_data_.is_detached(); }
 
 std::string GcsActor::GetName() const { return actor_table_data_.name(); }
@@ -763,6 +767,7 @@ void GcsActorManager::PollOwnerForActorOutOfScope(
   const auto &actor_id = actor->GetActorID();
   const auto &owner_node_id = actor->GetOwnerNodeID();
   const auto &owner_id = actor->GetOwnerID();
+  const auto &pg_id = actor->GetPlacementGroupID();
   auto &workers = owners_[owner_node_id];
   auto it = workers.find(owner_id);
   if (it == workers.end()) {

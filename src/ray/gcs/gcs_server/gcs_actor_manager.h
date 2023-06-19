@@ -176,6 +176,8 @@ class GcsActor {
 
   /// Get the id of this actor.
   ActorID GetActorID() const;
+  /// Get the id of the placement group this actor is bound to
+  PlacementGroupID GetPlacementGroupID() const;
   /// Returns whether or not this is a detached actor.
   bool IsDetached() const;
   /// Get the name of this actor.
