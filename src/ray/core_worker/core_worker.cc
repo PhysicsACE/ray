@@ -2232,6 +2232,57 @@ Status CoreWorker::WaitPlacementGroupReady(const PlacementGroupID &placement_gro
   }
 }
 
+std::pair<PlacementGroupID, Status> CoreWorker::GetNamedPlacementGroup(const std::string &name,
+                                          const std::string &ray_namespace,) {
+
+  RAY_CHECK(!name.empty());
+
+  std::unique_ptr<std::string> placement_group_table_data_;
+  std::promise<bool> promise;
+  PlacementGroupID placement_group_id;
+  const auto status = gcs_client_->PlacementGroups().AsyncGetByName(
+      placement_group_name,
+      ray_namespace,
+      TransformForOptionalItemCallback<rpc::PlacementGroupTableData>(
+          placement_group_table_data, promise));
+
+  if (status.ok()) {
+    promise.get_future().get();
+    const auto data_string = std::string(placement_group_table_data_.get().data(), 
+                                        placement_group_table_data_.get().size());
+    placement_group_id = PlacementGroupID::FromHex(data_string);
+    ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+    reference_counter_->AddLocalReference(pg_handle_id, CurrentCallSite());
+  } else {
+    RAY_LOG(DEBUG) << "Failed to look up placement group with name: " << name;
+    placement_group_id = PlacementGroupID::Nil();
+  }
+
+  if (status.IsTimedOut()) {
+    std::ostringstream stream;
+    stream << "There was timeout in getting the placement group, "
+              "probably because the GCS server is dead or under high load .";
+    std::string error_str = stream.str();
+    RAY_LOG(ERROR) << error_str;
+    return std::make_pair(nullptr, Status::TimedOut(error_str));
+  }
+
+  if (placement_group_id.IsNil()) {
+    std::ostringstream stream;
+    stream << "Failed to look up placement group with name '" << name << "'. This could "
+           << "because 1. You are trying to look up a named placement group you "
+           << "didn't create. 2. The named placement group was automatically freed. "
+           << "3. You did not use a namespace matching the namespace of the "
+           << "placement group.";
+    auto error_msg = stream.str();
+    RAY_LOG(WARNING) << error_msg;
+    return std::make_pair(nullptr, Status::NotFound(error_msg));
+  }
+
+  return std::make_pair(placement_group_id, Status::OK());
+
+}
+
 Status CoreWorker::SubmitActorTask(const ActorID &actor_id,
                                    const RayFunction &function,
                                    const std::vector<std::unique_ptr<TaskArg>> &args,

@@ -883,6 +883,12 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   Status WaitPlacementGroupReady(const PlacementGroupID &placement_group_id,
                                  int64_t timeout_seconds);
 
+  /// API to get a placement group by name. If successful, the status will be ok, 
+  /// otherwise, an error will be returned. Internally, this will also increment the 
+  /// the local reference of the placement group handle for automatice lifecycle management
+  /// of reserved resources. 
+  std::pair<PlacementGroupID, Status> GetNamedPlacementGroup(const std::string &name, const std::string &ray_namespace);
+
   /// Submit an actor task.
   ///
   /// \param[in] caller_id ID of the task submitter.
