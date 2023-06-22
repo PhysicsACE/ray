@@ -685,6 +685,16 @@ void ReferenceCounter::FreePlasmaObjects(const std::vector<ObjectID> &object_ids
   }
 }
 
+// void ReferenceCounter::DeleteReference(const ObjectID &object_id) {
+//   auto it = object_id_refs_.find(object_id);
+//   if (it == object_id_refs_.end()) {
+//     RAY_LOG(WARNING) << "Tried to free object that does not exist: "
+//                      << object_id;
+//     return;
+//   }
+//   DeleteReferenceInternal(it, nullptr);
+// }
+
 void ReferenceCounter::DeleteReferenceInternal(ReferenceTable::iterator it,
                                                std::vector<ObjectID> *deleted) {
   const ObjectID id = it->first;

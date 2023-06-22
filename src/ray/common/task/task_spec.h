@@ -417,6 +417,8 @@ class TaskSpecification : public MessageWrapper<rpc::TaskSpec> {
 
   void EmitTaskMetrics() const;
 
+  // std::function<void(const TaskID &)> on_complete_callback;
+
  private:
   void ComputeResources();
 

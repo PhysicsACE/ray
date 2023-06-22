@@ -124,6 +124,13 @@ class WorkerContext {
 
   int64_t GetTaskDepth() const;
 
+  /// Add on object that was created inside the current context that needs to 
+  /// be cleaned up
+  void AddObjectToDestroy(const ObjectID &object_id) LOCKS_EXCLUDED(mutex_);
+  /// Clear the objects list. Done at the end of the current task of actor context
+  /// signifying the start of another one. 
+  void CleanAndClearObjects(const std::function<void(const ObjectID &)> callback) LOCKS_EXCLUDED(mutex_);
+
  protected:
   // allow unit test to set.
   bool current_actor_is_direct_call_ = false;
@@ -158,6 +165,10 @@ class WorkerContext {
   TaskID main_thread_or_actor_creation_task_id_ GUARDED_BY(mutex_);
   // To protect access to mutable members;
   mutable absl::Mutex mutex_;
+  /// This is used to hold objects that were created inside the current context
+  /// task or actor that should be freed upon completion of the task/actor. Currently,
+  /// this is used to remove placement groups that were created inside a remote task
+  std::vector<ObjectID> objects_to_destroy_ GUARDED_BY(mutex_);
 
  private:
   WorkerThreadContext &GetThreadContext() const;

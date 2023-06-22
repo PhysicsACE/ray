@@ -568,6 +568,10 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// Release all local references which registered on this local.
   void ReleaseAllLocalReferences();
 
+  /// Helper to call DeleteReferenceInternal from CoreWorker. This should ONLY by
+  /// used when the object is guaranteed to be not needed.
+  // void DeleteReference(const ObjectID &object_id);
+
  private:
   /// Contains information related to nested object refs only.
   struct NestedReferenceCount {

@@ -684,6 +684,12 @@ void TaskManager::CompletePendingTask(const TaskID &task_id,
     RAY_LOG(INFO) << "Evicted " << bytes_evicted / 1e6 << "MB of task lineage.";
   }
 
+  const auto pg_bundle = spec.PlacementGroupBundleId();
+  if (!pg_bundle.first.IsNil()) {
+    ObjectID pg_handle_id = pg_bundle.first.GeneratePlacementHandle();
+    reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+  }
+
   ShutdownIfNeeded();
 }
 
@@ -812,6 +818,13 @@ void TaskManager::FailPendingTask(const TaskID &task_id,
                                /*release_lineage=*/true,
                                rpc::Address(),
                                ReferenceCounter::ReferenceTableProto());
+  
+  const auto pg_bundle = spec.PlacementGroupBundleId();
+  if (!pg_bundle.first.IsNil()) {
+    ObjectID pg_handle_id = pg_bundle.first.GeneratePlacementHandle();
+    reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+  }
+
 
   MarkTaskReturnObjectsFailed(spec, error_type, ray_error_info, store_in_plasma_ids);
 

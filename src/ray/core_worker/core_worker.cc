@@ -2160,6 +2160,7 @@ Status CoreWorker::CreatePlacementGroup(
   const PlacementGroupID placement_group_id = PlacementGroupID::Of(GetCurrentJobId(),
                                                                    worker_context_.GetCurrentTaskID(),
                                                                    next_task_index);
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
   PlacementGroupSpecBuilder builder;
   builder.SetPlacementGroupSpec(
       placement_group_id,
@@ -2174,13 +2175,17 @@ Status CoreWorker::CreatePlacementGroup(
   PlacementGroupSpecification placement_group_spec = builder.Build();
   *return_placement_group_id = placement_group_id;
 
-  AddLocalPlacementHandleReference(placement_group_id,
-                                  CurrentCallSite(),
-                                  rpc_address_,
-                                  placement_group_creation_options.is_detached);
+  // AddLocalPlacementHandleReference(placement_group_id,
+  //                                 CurrentCallSite(),
+  //                                 rpc_address_,
+  //                                 placement_group_creation_options.is_detached);
 
-  OutOfScopePGCallback(placement_group_id);
+  // OutOfScopePGCallback(placement_group_id);
 
+  // const auto current_task = worker_context_.GetCurrentTaskID();
+  // if (!current_task.IsNil()) {
+  //   worker_context_.AddObjectToDestroy(pg_handle_id);
+  // }
 
   RAY_LOG(INFO) << "Submitting Placement Group creation to GCS: " << placement_group_id;
   const auto status =
@@ -2193,6 +2198,12 @@ Status CoreWorker::CreatePlacementGroup(
               "because GCS server is dead or there's a high load there.";
     return Status::TimedOut(stream.str());
   } else {
+    AddLocalPlacementHandleReference(placement_group_id,
+                                  CurrentCallSite(),
+                                  rpc_address_,
+                                  placement_group_creation_options.is_detached);
+
+    OutOfScopePGCallback(placement_group_id);
     return status;
   }
 
