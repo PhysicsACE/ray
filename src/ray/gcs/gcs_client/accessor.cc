@@ -967,7 +967,7 @@ Status PlacementGroupInfoAccessor::AsyncGet(
 Status PlacementGroupInfoAccessor::AsyncGetByName(
     const std::string &name,
     const std::string &ray_namespace,
-    const OptionalItemCallback<rpc::PlacementGroupTableData> &callback,
+    const std::function<void(const Status &status, const boost::optional<rpc::PlacementGroupTableData> &result)> &callback,
     int64_t timeout_ms) {
   RAY_LOG(DEBUG) << "Getting named placement group info, name = " << name;
   rpc::GetNamedPlacementGroupRequest request;
@@ -979,8 +979,6 @@ Status PlacementGroupInfoAccessor::AsyncGetByName(
                        const rpc::GetNamedPlacementGroupReply &reply) {
         if (reply.has_placement_group_table_data()) {
           callback(status, reply.placement_group_table_data());
-        } else {
-          callback(status, boost::none);
         }
         RAY_LOG(DEBUG) << "Finished getting named placement group info, status = "
                        << status << ", name = " << name;

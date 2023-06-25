@@ -687,7 +687,14 @@ void TaskManager::CompletePendingTask(const TaskID &task_id,
   const auto pg_bundle = spec.PlacementGroupBundleId();
   if (!pg_bundle.first.IsNil()) {
     ObjectID pg_handle_id = pg_bundle.first.GeneratePlacementHandle();
-    reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+    reference_counter_->DecrementPlacementOptionReference(pg_handle_id);
+  }
+
+  if (spec.HasDestroyable()) {
+    auto callback = [this](const std::vector<ObjectID> &object_ids) {
+      reference_counter_->BatchDelete(object_ids);
+    };
+    spec.CleanUpObjects(callback);
   }
 
   ShutdownIfNeeded();
@@ -822,9 +829,15 @@ void TaskManager::FailPendingTask(const TaskID &task_id,
   const auto pg_bundle = spec.PlacementGroupBundleId();
   if (!pg_bundle.first.IsNil()) {
     ObjectID pg_handle_id = pg_bundle.first.GeneratePlacementHandle();
-    reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+    reference_counter_->DecrementPlacementOptionReference(pg_handle_id);
   }
 
+  if (spec.HasDestroyable()) {
+    auto callback = [this](const std::vector<ObjectID> &object_ids) {
+      reference_counter_->BatchDelete(object_ids);
+    };
+    spec.CleanUpObjects(callback);
+  }
 
   MarkTaskReturnObjectsFailed(spec, error_type, ray_error_info, store_in_plasma_ids);
 
@@ -1104,6 +1117,13 @@ void TaskManager::MarkTaskRetryOnResubmit(TaskEntry &task_entry) {
       task_entry.spec.AttemptNumber(), task_entry.spec, rpc::TaskStatus::FINISHED);
   task_entry.MarkRetryOnResubmit();
 
+  if (task_entry.spec.HasDestroyable()) {
+    auto callback = [this](const std::vector<ObjectID> &object_ids) {
+      reference_counter_->BatchDelete(object_ids);
+    };
+    task_entry.spec.CleanUpObjects(callback);
+  }
+
   // Mark the new status and also include task spec info for the new attempt.
   task_entry.SetStatus(rpc::TaskStatus::PENDING_ARGS_AVAIL);
   // NOTE(rickyx): We only increment the AttemptNumber on the task spec when
@@ -1124,6 +1144,13 @@ void TaskManager::MarkTaskRetryOnFailed(TaskEntry &task_entry,
                         /* include_task_info */ false,
                         worker::TaskStatusEvent::TaskStateUpdate(error_info));
   task_entry.MarkRetryOnFailed();
+
+  if (task_entry.spec.HasDestroyable()) {
+    auto callback = [this](const std::vector<ObjectID> &object_ids) {
+      reference_counter_->BatchDelete(object_ids);
+    };
+    task_entry.spec.CleanUpObjects(callback);
+  }
 
   // Mark the new status and also include task spec info for the new attempt.
   task_entry.SetStatus(rpc::TaskStatus::PENDING_NODE_ASSIGNMENT);

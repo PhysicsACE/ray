@@ -397,16 +397,16 @@ WorkerThreadContext &WorkerContext::GetThreadContext() const {
   return *thread_context_;
 }
 
-// void WorkerContext::AddObjectToDestroy(const ObjectID &object_id) {
-//   objects_to_destroy_.push_back(object_id);
-// }
+void WorkerContext::AddObjectToDestroy(const ObjectID &object_id) {
+  objects_to_destroy_.push_back(object_id);
+}
 
-// void WorkerContext::CleanAndClearObjects(const std::function<void(const ObjectID &)> callback) {
-//   for (ObjectID i : objects_to_destroy_) {
-//     callback(i);
-//   }
-//   objects_to_destroy_.clear();
-// }
+void WorkerContext::CleanAndClearObjects(const std::function<void(const ObjectID &)> callback) {
+  for (ObjectID i : objects_to_destroy_) {
+    callback(i);
+  }
+  objects_to_destroy_.clear();
+}
 
 }  // namespace core
 }  // namespace ray

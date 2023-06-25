@@ -417,7 +417,15 @@ class TaskSpecification : public MessageWrapper<rpc::TaskSpec> {
 
   void EmitTaskMetrics() const;
 
-  // std::function<void(const TaskID &)> on_complete_callback;
+  std::vector<ObjectID> ObjectsToDestroy() const;
+
+  void AddObjectToDestroy(const ObjectID &object_to_destroy);
+
+  void CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback);
+
+  bool HasDestroyable();
+
+  void SetHasDestroyable(const bool &value);
 
  private:
   void ComputeResources();

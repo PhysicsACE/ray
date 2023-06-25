@@ -570,7 +570,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
 
   /// Helper to call DeleteReferenceInternal from CoreWorker. This should ONLY by
   /// used when the object is guaranteed to be not needed.
-  // void DeleteReference(const ObjectID &object_id);
+  void BatchDelete(const std::vector<ObjectID> &object_ids);
 
  private:
   /// Contains information related to nested object refs only.

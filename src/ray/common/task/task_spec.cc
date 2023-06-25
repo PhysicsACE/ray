@@ -556,6 +556,36 @@ std::string TaskSpecification::CallSiteString() const {
   return stream.str();
 }
 
+std::vector<ObjectID> TaskSpecification::ObjectsToDestroy() const {
+  RAY_CHECK(message_->has_destroyable());
+  std::vector<ObjectID> objects_to_destroy;
+  for (const auto &obj_to_destroy : message_->objects_to_destroy()) {
+    objects_to_destroy.push_back(ObjectID::FromBinary(obj_to_destroy));
+  }
+  return objects_to_destroy;
+}
+
+void TaskSpecification::AddObjectToDestroy(const ObjectID &object_id) {
+  message_->add_objects_to_destroy(object_id.Binary());
+}
+
+void TaskSpecification::CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback) {
+  RAY_CHECK(message_->has_destroyable());
+  std::vector<ObjectID> object_ids;
+  for (const auto &obj_to_destroy : message_->objects_to_destroy()) {
+    object_ids.push_back(ObjectID::FromBinary(obj_to_destroy));
+  }
+  callback(object_ids);
+}
+
+bool TaskSpecification::HasDestroyable() {
+  return message_->has_destroyable();
+}
+
+void TaskSpecification::SetHasDestroyable(const bool &value) {
+  message_->set_has_destroyable(value);
+}
+
 WorkerCacheKey::WorkerCacheKey(
     const std::string serialized_runtime_env,
     const absl::flat_hash_map<std::string, double> &required_resources,

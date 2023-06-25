@@ -2182,10 +2182,12 @@ Status CoreWorker::CreatePlacementGroup(
 
   // OutOfScopePGCallback(placement_group_id);
 
-  // const auto current_task = worker_context_.GetCurrentTaskID();
-  // if (!current_task.IsNil()) {
-  //   worker_context_.AddObjectToDestroy(pg_handle_id);
-  // }
+  const auto current_task = worker_context_.GetCurrentTaskID();
+  if (!current_task.IsNil()) {
+    auto spec = task_manager_->GetTaskSpec(current_task);
+    spec->AddObjectToDestroy(pg_handle_id);
+    spec->SetHasDestroyable(true);
+  }
 
   RAY_LOG(INFO) << "Submitting Placement Group creation to GCS: " << placement_group_id;
   const auto status =
@@ -2197,20 +2199,17 @@ Status CoreWorker::CreatePlacementGroup(
            << ". It is probably "
               "because GCS server is dead or there's a high load there.";
     return Status::TimedOut(stream.str());
-  } else {
+  } else if (status.ok()){
     AddLocalPlacementHandleReference(placement_group_id,
                                   CurrentCallSite(),
                                   rpc_address_,
                                   placement_group_creation_options.is_detached);
 
     OutOfScopePGCallback(placement_group_id);
-    return status;
   }
 
-  /// Create a callback for GCS to initialize the create the handle once the group is created
-  /// We will have to poll the owner of the placement group from GCS to see if it is still in 
-  /// scope so the callback will be to be called from the poll request is made to ensure that
-  /// the initail reference to the handle exits. 
+  return status;
+
 }
 
 Status CoreWorker::RemovePlacementGroup(const PlacementGroupID &placement_group_id) {
@@ -2244,24 +2243,34 @@ Status CoreWorker::WaitPlacementGroupReady(const PlacementGroupID &placement_gro
 }
 
 std::pair<PlacementGroupID, Status> CoreWorker::GetNamedPlacementGroup(const std::string &name,
-                                          const std::string &ray_namespace,) {
+                                          const std::string &ray_namespace) {
 
   RAY_CHECK(!name.empty());
 
-  std::unique_ptr<std::string> placement_group_table_data_;
-  std::promise<bool> promise;
+  std::unique_ptr<rpc::PlacementGroupTableData> placement_group_table_data_;
   PlacementGroupID placement_group_id;
+
+  const auto callback = [placement_group_table_data_](const Status &status,
+                                                      const boost::optional<rpc::PlacementGroupTableData> &result) {
+    RAY_CHECK_OK(status);
+    if (result) {
+      placement_group_table_data_.reset(result);
+    }
+  }
+
+  if (placement_group_table_data_) {
+    placement_group_id = PlacementGroupID::FromBinary(placement_group_table_data_.placement_group_id());
+  }
+
   const auto status = gcs_client_->PlacementGroups().AsyncGetByName(
-      placement_group_name,
+      name,
       ray_namespace,
-      TransformForOptionalItemCallback<rpc::PlacementGroupTableData>(
-          placement_group_table_data, promise));
+      placement_group_table_data_);
 
   if (status.ok()) {
-    promise.get_future().get();
-    const auto data_string = std::string(placement_group_table_data_.get().data(), 
-                                        placement_group_table_data_.get().size());
-    placement_group_id = PlacementGroupID::FromHex(data_string);
+    // const auto data_string = std::string(placement_group_table_data_.get().data(), 
+    //                                     placement_group_table_data_.get().size());
+    // placement_group_id = PlacementGroupID::FromHex(data_string);
     ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
     reference_counter_->AddLocalReference(pg_handle_id, CurrentCallSite());
   } else {
@@ -2275,7 +2284,7 @@ std::pair<PlacementGroupID, Status> CoreWorker::GetNamedPlacementGroup(const std
               "probably because the GCS server is dead or under high load .";
     std::string error_str = stream.str();
     RAY_LOG(ERROR) << error_str;
-    return std::make_pair(nullptr, Status::TimedOut(error_str));
+    return std::make_pair(PlacementGroupID::Nil(), Status::TimedOut(error_str));
   }
 
   if (placement_group_id.IsNil()) {
@@ -2287,7 +2296,7 @@ std::pair<PlacementGroupID, Status> CoreWorker::GetNamedPlacementGroup(const std
            << "placement group.";
     auto error_msg = stream.str();
     RAY_LOG(WARNING) << error_msg;
-    return std::make_pair(nullptr, Status::NotFound(error_msg));
+    return std::make_pair(PlacementGroupID::Nil(), Status::NotFound(error_msg));
   }
 
   return std::make_pair(placement_group_id, Status::OK());
