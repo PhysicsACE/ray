@@ -2539,16 +2539,17 @@ cdef class CoreWorker:
             CCoreWorkerProcess.GetCoreWorker()
             .GetCurrentPlacementGroupId().Binary())
     
-    def get_named_placement_group(self, const c_string &name
+    def get_named_placement_group(self, const c_string &name,
                                         const c_string &ray_namespace):
         cdef:
-            CPlacementGroupID return_id
+            pair[CPlacementGroupID, CRayStatus] named_pg_pair
         with nogil:
             named_pg_pair = (
                 CCoreWorkerProcess.GetCoreWorker().GetNamedPlacementGroup(
                     name, ray_namespace))
-            check_status(named_pg_pair.second)
-            return PlacementGroupID(named_pg_pair.first)
+                    
+        check_status(named_pg_pair.second)
+        return PlacementGroupID(named_pg_pair.first.Binary())
 
     def get_worker_id(self):
         return WorkerID(

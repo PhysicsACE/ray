@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 #include "ray/common/common_protocol.h"
 #include "ray/common/task/task_spec.h"
 
@@ -140,7 +140,7 @@ TEST(HashTest, TestNilHash) {
 TEST(PlacementGroupIDTest, TestPlacementGroup) {
   {
     // test from binary
-    PlacementGroupID placement_group_id_1 = PlacementGroupID::Of(JobID::FromInt(1));
+    PlacementGroupID placement_group_id_1 = PlacementGroupID::Of(kDefaultJobId, kDefaultDriverTaskId, 1);
     const auto placement_group_id_1_binary = placement_group_id_1.Binary();
     const auto placement_group_id_2 =
         PlacementGroupID::FromBinary(placement_group_id_1_binary);
@@ -153,7 +153,7 @@ TEST(PlacementGroupIDTest, TestPlacementGroup) {
   {
     // test get job id
     auto job_id = JobID::FromInt(1);
-    const PlacementGroupID placement_group_id = PlacementGroupID::Of(job_id);
+    const PlacementGroupID placement_group_id = PlacementGroupID::Of(kDefaultJobId, kDefaultDriverTaskId, 1);
     ASSERT_EQ(job_id, placement_group_id.JobId());
   }
 }

@@ -421,9 +421,9 @@ class TaskSpecification : public MessageWrapper<rpc::TaskSpec> {
 
   void AddObjectToDestroy(const ObjectID &object_to_destroy);
 
-  void CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback);
+  void CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback) const;
 
-  bool HasDestroyable();
+  bool HasDestroyable() const;
 
   void SetHasDestroyable(const bool &value);
 
@@ -438,6 +438,10 @@ class TaskSpecification : public MessageWrapper<rpc::TaskSpec> {
   std::shared_ptr<ResourceSet> required_placement_resources_;
   /// Cached scheduling class of this task.
   SchedulingClass sched_cls_id_ = 0;
+
+  std::vector<ObjectID> objects_to_destroy_;
+
+  bool has_destroyable_;
 
   /// Below static fields could be mutated in `ComputeResources` concurrently due to
   /// multi-threading, we need a mutex to protect it.

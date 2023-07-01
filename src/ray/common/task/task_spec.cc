@@ -557,33 +557,29 @@ std::string TaskSpecification::CallSiteString() const {
 }
 
 std::vector<ObjectID> TaskSpecification::ObjectsToDestroy() const {
-  RAY_CHECK(message_->has_destroyable());
-  std::vector<ObjectID> objects_to_destroy;
-  for (const auto &obj_to_destroy : message_->objects_to_destroy()) {
-    objects_to_destroy.push_back(ObjectID::FromBinary(obj_to_destroy));
-  }
-  return objects_to_destroy;
+  // RAY_CHECK(message_->has_destroyable());
+  // std::vector<ObjectID> objects_to_destroy;
+  // for (const auto &obj_to_destroy : message_->objects_to_destroy()) {
+  //   objects_to_destroy.push_back(ObjectID::FromBinary(obj_to_destroy));
+  // }
+  return objects_to_destroy_;
 }
 
 void TaskSpecification::AddObjectToDestroy(const ObjectID &object_id) {
-  message_->add_objects_to_destroy(object_id.Binary());
+  objects_to_destroy_.push_back(object_id);
 }
 
-void TaskSpecification::CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback) {
-  RAY_CHECK(message_->has_destroyable());
-  std::vector<ObjectID> object_ids;
-  for (const auto &obj_to_destroy : message_->objects_to_destroy()) {
-    object_ids.push_back(ObjectID::FromBinary(obj_to_destroy));
-  }
-  callback(object_ids);
+void TaskSpecification::CleanUpObjects(const std::function<void(const std::vector<ObjectID> &)> callback) const {
+  RAY_CHECK(has_destroyable_);
+  callback(objects_to_destroy_);
 }
 
-bool TaskSpecification::HasDestroyable() {
-  return message_->has_destroyable();
+bool TaskSpecification::HasDestroyable() const {
+  return has_destroyable_;
 }
 
 void TaskSpecification::SetHasDestroyable(const bool &value) {
-  message_->set_has_destroyable(value);
+  has_destroyable_ = value;
 }
 
 WorkerCacheKey::WorkerCacheKey(

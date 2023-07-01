@@ -366,7 +366,7 @@ bool ActorManager::PlacementGroupHandleExists(const ActorID &actor_id) {
 bool ActorManager::AddAssociatedPlacementGroup(const ActorID &actor_id,
                                                const PlacementGroupID &placement_group_id) {
   absl::MutexLock lock(&mutex_);
-  return placement_group_handles_.emplace(actor_id, placement_group_handles_).second;
+  return placement_group_handles_.emplace(actor_id, placement_group_id).second;
 }
 
 }  // namespace core

@@ -2247,59 +2247,59 @@ std::pair<PlacementGroupID, Status> CoreWorker::GetNamedPlacementGroup(const std
 
   RAY_CHECK(!name.empty());
 
-  std::unique_ptr<rpc::PlacementGroupTableData> placement_group_table_data_;
-  PlacementGroupID placement_group_id;
+  // std::unique_ptr<rpc::PlacementGroupTableData> placement_group_table_data_;
+  // PlacementGroupID placement_group_id;
 
-  const auto callback = [placement_group_table_data_](const Status &status,
-                                                      const boost::optional<rpc::PlacementGroupTableData> &result) {
-    RAY_CHECK_OK(status);
-    if (result) {
-      placement_group_table_data_.reset(result);
-    }
-  }
+  // const auto callback = [placement_group_table_data_](const Status &status,
+  //                                                     const rpc::PlacementGroupTableData &result) {
+  //   RAY_CHECK_OK(status);
+  //   if (result) {
+  //     *placement_group_table_data_ = result;
+  //   }
+  // };
 
-  if (placement_group_table_data_) {
-    placement_group_id = PlacementGroupID::FromBinary(placement_group_table_data_.placement_group_id());
-  }
+  // const auto status = gcs_client_->PlacementGroups().AsyncGetByName(
+  //     name,
+  //     ray_namespace,
+  //     callback);
 
-  const auto status = gcs_client_->PlacementGroups().AsyncGetByName(
-      name,
-      ray_namespace,
-      placement_group_table_data_);
+  // if (placement_group_table_data_) {
+  //   placement_group_id = PlacementGroupID::FromBinary(placement_group_table_data_.placement_group_id());
+  // }
 
-  if (status.ok()) {
-    // const auto data_string = std::string(placement_group_table_data_.get().data(), 
-    //                                     placement_group_table_data_.get().size());
-    // placement_group_id = PlacementGroupID::FromHex(data_string);
-    ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
-    reference_counter_->AddLocalReference(pg_handle_id, CurrentCallSite());
-  } else {
-    RAY_LOG(DEBUG) << "Failed to look up placement group with name: " << name;
-    placement_group_id = PlacementGroupID::Nil();
-  }
+  // if (status.ok()) {
+  //   // const auto data_string = std::string(placement_group_table_data_.get().data(), 
+  //   //                                     placement_group_table_data_.get().size());
+  //   // placement_group_id = PlacementGroupID::FromHex(data_string);
+  //   ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  //   reference_counter_->AddLocalReference(pg_handle_id, CurrentCallSite());
+  // } else {
+  //   RAY_LOG(DEBUG) << "Failed to look up placement group with name: " << name;
+  //   placement_group_id = PlacementGroupID::Nil();
+  // }
 
-  if (status.IsTimedOut()) {
-    std::ostringstream stream;
-    stream << "There was timeout in getting the placement group, "
-              "probably because the GCS server is dead or under high load .";
-    std::string error_str = stream.str();
-    RAY_LOG(ERROR) << error_str;
-    return std::make_pair(PlacementGroupID::Nil(), Status::TimedOut(error_str));
-  }
+  // if (status.IsTimedOut()) {
+  //   std::ostringstream stream;
+  //   stream << "There was timeout in getting the placement group, "
+  //             "probably because the GCS server is dead or under high load .";
+  //   std::string error_str = stream.str();
+  //   RAY_LOG(ERROR) << error_str;
+  //   return std::make_pair(PlacementGroupID::Nil(), Status::TimedOut(error_str));
+  // }
 
-  if (placement_group_id.IsNil()) {
-    std::ostringstream stream;
-    stream << "Failed to look up placement group with name '" << name << "'. This could "
-           << "because 1. You are trying to look up a named placement group you "
-           << "didn't create. 2. The named placement group was automatically freed. "
-           << "3. You did not use a namespace matching the namespace of the "
-           << "placement group.";
-    auto error_msg = stream.str();
-    RAY_LOG(WARNING) << error_msg;
-    return std::make_pair(PlacementGroupID::Nil(), Status::NotFound(error_msg));
-  }
+  // if (placement_group_id.IsNil()) {
+  //   std::ostringstream stream;
+  //   stream << "Failed to look up placement group with name '" << name << "'. This could "
+  //          << "because 1. You are trying to look up a named placement group you "
+  //          << "didn't create. 2. The named placement group was automatically freed. "
+  //          << "3. You did not use a namespace matching the namespace of the "
+  //          << "placement group.";
+  //   auto error_msg = stream.str();
+  //   RAY_LOG(WARNING) << error_msg;
+  //   return std::make_pair(PlacementGroupID::Nil(), Status::NotFound(error_msg));
+  // }
 
-  return std::make_pair(placement_group_id, Status::OK());
+  return std::make_pair(PlacementGroupID::Nil(), Status::OK());
 
 }
 

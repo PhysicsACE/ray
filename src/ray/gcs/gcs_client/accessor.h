@@ -651,7 +651,7 @@ class PlacementGroupInfoAccessor {
   virtual Status AsyncGetByName(
       const std::string &placement_group_name,
       const std::string &ray_namespace,
-      const std::function<void(const Status &status, const boost::optional<rpc::PlacementGroupTableData> &result)> &callback,
+      const std::function<void(const Status &status, const rpc::PlacementGroupTableData &result)> &callback,
       int64_t timeout_ms = -1);
 
   /// Get all placement group info from GCS asynchronously.

@@ -681,9 +681,5 @@ message PlacementGroupTableData {
   // The time that the last bundle of a placement group is committed at,
   // effectively when the placement group has been "scheduled".
   int64 placement_group_final_bundle_placement_timestamp_ms = 15;
-  // The remote task where the placement group was created
-  bytes creator_task_id = 16;
-  // If the creator task is dead
-  bool creator_task_dead;
 }
 ///////////////////////////////////////////////////////////////////////////////
