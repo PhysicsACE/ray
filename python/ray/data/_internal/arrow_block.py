@@ -17,17 +17,14 @@ from typing import (
 import numpy as np
 import json
 
-from ray.air.constants import TENSOR_COLUMN_NAME
 from ray._private.utils import _get_pyarrow_version
+from ray.air.constants import TENSOR_COLUMN_NAME
 from ray.data._internal.arrow_ops import transform_polars, transform_pyarrow
 from ray.data._internal.numpy_support import (
     convert_udf_returns_to_numpy,
     is_valid_udf_return,
 )
-from ray.data._internal.table_block import (
-    TableBlockAccessor,
-    TableBlockBuilder,
-)
+from ray.data._internal.table_block import TableBlockAccessor, TableBlockBuilder
 from ray.data._internal.util import _truncated_repr
 from ray.data.aggregate import AggregateFn
 from ray.data.block import (
@@ -169,7 +166,6 @@ class ArrowBlockAccessor(TableBlockAccessor):
     @staticmethod
     def numpy_to_block(
         batch: Union[np.ndarray, Dict[str, np.ndarray], Dict[str, list]],
-        passthrough_arrow_not_implemented_errors: bool = False,
     ) -> "pyarrow.Table":
         import pyarrow as pa
 
@@ -191,17 +187,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
             col = convert_udf_returns_to_numpy(col)
             # Use Arrow's native *List types for 1-dimensional ndarrays.
             if col.dtype.type is np.object_ or col.ndim > 1:
-                try:
-                    col = ArrowTensorArray.from_numpy(col)
-                except pa.ArrowNotImplementedError as e:
-                    if passthrough_arrow_not_implemented_errors:
-                        raise e
-                    raise ValueError(
-                        "Failed to convert multi-dimensional ndarray of dtype "
-                        f"{col.dtype} to our tensor extension since this dtype is not "
-                        "supported by Arrow. If encountering this due to string data, "
-                        'cast the ndarray to a string dtype, e.g. a.astype("U").'
-                    ) from e
+                col = ArrowTensorArray.from_numpy(col)
             new_batch[col_name] = col
         return pa.Table.from_pydict(new_batch)
 
@@ -266,7 +252,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         if columns is None:
             columns = self._table.column_names
-            should_be_single_ndarray = self.is_tensor_wrapper()
+            should_be_single_ndarray = False
         elif isinstance(columns, list):
             should_be_single_ndarray = (
                 columns == self._table.column_names and self.is_tensor_wrapper()

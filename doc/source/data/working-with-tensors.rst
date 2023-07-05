@@ -20,7 +20,6 @@ Ray Data represents tensors as
     print(ds)
 
 .. testoutput::
-    :options: +ELLIPSIS
 
     Dataset(
        num_blocks=...,
@@ -110,7 +109,8 @@ For more information on transforming data, read
 Saving tensor data
 ------------------
 
-Save tensor data in Parquet or Numpy files. Other formats aren't supported.
+Save tensor data with formats like Parquet, NumPy, and JSON. To view all supported
+formats, see the :ref:`Input/Output reference <input-output>`.
 
 .. tab-set::
 
@@ -128,14 +128,25 @@ Save tensor data in Parquet or Numpy files. Other formats aren't supported.
 
     .. tab-item:: NumPy
 
-        Call :meth:`~ray.data.Dataset.write_numpy` to save an ndarray column in a NumPy
-        file.
+        Call :meth:`~ray.data.Dataset.write_numpy` to save an ndarray column in NumPy
+        files.
 
         .. testcode::
 
             import ray
 
             ds = ray.data.read_images("example://image-datasets/simple")
-            ds.write_numpy("/tmp/simple.npy", column="image")
+            ds.write_numpy("/tmp/simple", column="image")
+
+    .. tab-item:: JSON
+
+        To save images in a JSON file, call :meth:`~ray.data.Dataset.write_json`.
+
+        .. testcode::
+
+            import ray
+
+            ds = ray.data.read_images("example://image-datasets/simple")
+            ds.write_json("/tmp/simple")
 
 For more information on saving data, read :ref:`Saving data <loading_data>`.

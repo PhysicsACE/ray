@@ -6,9 +6,9 @@ import pytest
 
 import ray
 from ray import serve
-from ray._private.test_utils import wait_for_condition
+from ray._private.test_utils import SignalActor, wait_for_condition
 from ray.serve._private.utils import block_until_http_ready
-import ray.experimental.state.api as state_api
+import ray.util.state as state_api
 from fastapi import FastAPI
 from ray.serve.metrics import Counter, Histogram, Gauge
 from ray.serve._private.constants import DEFAULT_LATENCY_BUCKET_MS
@@ -88,8 +88,44 @@ def test_serve_metrics_for_successful_connection(serve_start_shutdown):
         verify_metrics(do_assert=True)
 
 
-def test_http_metrics(serve_start_shutdown):
+def test_http_replica_gauge_metrics(serve_start_shutdown):
+    """Test http replica gauge metrics"""
+    signal = SignalActor.remote()
 
+    @serve.deployment
+    class A:
+        async def __call__(self):
+            await signal.wait.remote()
+
+    handle = serve.run(A.bind(), name="app1")
+    _ = handle.remote()
+    wait_for_condition(
+        lambda: len(get_metric_dictionaries("serve_replica_processing_queries")) == 1,
+        timeout=20,
+    )
+    processing_requests = get_metric_dictionaries("serve_replica_processing_queries")
+    assert len(processing_requests) == 1
+    assert processing_requests[0]["deployment"] == "app1_A"
+    assert processing_requests[0]["application"] == "app1"
+    print("processing_requests working as expected.")
+
+    pending_requests = get_metric_dictionaries("serve_replica_pending_queries")
+    assert len(pending_requests) == 1
+    assert pending_requests[0]["deployment"] == "app1_A"
+    assert pending_requests[0]["application"] == "app1"
+
+    resp = requests.get("http://127.0.0.1:9999").text
+    resp = resp.split("\n")
+    for metrics in resp:
+        if "# HELP" in metrics or "# TYPE" in metrics:
+            continue
+        if "serve_replica_processing_queries" in metrics:
+            assert "1.0" in metrics
+        elif "serve_replica_pending_queries" in metrics:
+            assert "0" in metrics
+
+
+def test_http_metrics(serve_start_shutdown):
     # NOTE: These metrics should be documented at
     # https://docs.ray.io/en/latest/serve/monitoring.html#metrics
     # Any updates here should be reflected there too.
@@ -350,8 +386,10 @@ def test_replica_metrics_fields(serve_start_shutdown):
         verify_metrics(latency_metrics[0], expected_output1)
         verify_metrics(latency_metrics[1], expected_output2)
 
+    wait_for_condition(
+        lambda: len(get_metric_dictionaries("serve_replica_processing_queries")) == 2
+    )
     processing_queries = get_metric_dictionaries("serve_replica_processing_queries")
-    assert len(processing_queries) == 2
     expected_output1 = {"deployment": "app1_f", "application": "app1"}
     expected_output2 = {"deployment": "app2_g", "application": "app2"}
     verify_metrics(processing_queries[0], expected_output1)
@@ -758,6 +796,49 @@ class TestRequestContextMetrics:
             "my_runtime_tag": "200",
         }
         self.verify_metrics(histogram_metrics[0], expected_metrics)
+
+
+def test_multiplexed_metrics(serve_start_shutdown):
+    """Tests multiplexed API corresponding metrics."""
+
+    @serve.deployment
+    class Model:
+        @serve.multiplexed(max_num_models_per_replica=2)
+        async def get_model(self, model_id: str):
+            return model_id
+
+        async def __call__(self, model_id: str):
+            await self.get_model(model_id)
+            return
+
+    handle = serve.run(Model.bind(), name="app", route_prefix="/app")
+    handle.remote("model1")
+    handle.remote("model2")
+    # Trigger model eviction.
+    handle.remote("model3")
+    expected_metrics = [
+        "serve_multiplexed_model_load_latency_s",
+        "serve_multiplexed_model_unload_latency_s",
+        "serve_num_multiplexed_models",
+        "serve_multiplexed_models_load_counter",
+        "serve_multiplexed_models_unload_counter",
+    ]
+
+    def verify_metrics():
+        try:
+            resp = requests.get("http://127.0.0.1:9999").text
+        # Requests will fail if we are crashing the controller
+        except requests.ConnectionError:
+            return False
+        for metric in expected_metrics:
+            assert metric in resp
+        return True
+
+    wait_for_condition(
+        verify_metrics,
+        timeout=20,
+        retry_interval_ms=1000,
+    )
 
 
 def test_actor_summary(serve_instance):
