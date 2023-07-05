@@ -143,13 +143,13 @@ class ReferenceCounter : public ReferenceCounterInterface,
 
   /// Add an actor for which the specified object is required.
   void AddPlacementRequiredReference(const ObjectID &placement_id,
-                                     const ActorID &actor_id)
+                                     const ObjectID &object_id)
   LOCKS_EXCLUDED(mutex_);
 
   /// Remove an actor for which the specified object is required. Used
   /// when an actor either goes out of scope or is manually killed. 
   void RemovePlacementRequiredReference(const ObjectID &placement_id,
-                                        const ActorID &actor_id)
+                                        const ObjectID &object_id)
   LOCKS_EXCLUDED(mutex_);
 
   /// Add references for the object dependencies of a resubmitted task. This
@@ -619,17 +619,17 @@ class ReferenceCounter : public ReferenceCounterInterface,
     absl::flat_hash_set<rpc::WorkerAddress> borrowers;
   };
 
-  /// Contains information about all the actors that require this object.
+  /// Contains information about all the Objects whose lifetimes require this object.
   /// Currently used to store actors that are instantiated for a specefic
   /// placement group handle for PG lifecycle management. 
   struct RequiredInfo {
-    /// A List of Actors/processes that require this object to function. This 
+    /// A List of Objects that require this object to function. This 
     /// is currently only used for PG lifecycle management to automatically free
     /// PG reserved resources. We add an ActorID to this set when an actor is
     /// instantiated in the frontend with a specific placement group. We keep track
     /// of the specific actors lifecycle and when it goes out of scope or is manually
     /// killed in the frontend, we remove its respective ActorID from this set. 
-    absl::flat_hash_set<ActorID> required;
+    absl::flat_hash_set<ObjectID> required;
   };
 
   struct Reference {
@@ -1102,6 +1102,10 @@ class ReferenceCounter : public ReferenceCounterInterface,
 
   /// Keep track of objects owend by this worker.
   size_t num_objects_owned_by_us_ GUARDED_BY(mutex_) = 0;
+  /// Used to store object ids that are included in refernce counting for
+  /// lifecycle management purposes but do not have associated IDs in the language
+  /// frontend. This currently includes placment group and actor handles
+  absl::flat_hash_set<ObjectID> phantom_references_ GUARDED_BY(mutex_);
 };
 
 }  // namespace core

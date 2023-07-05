@@ -1256,5 +1256,25 @@ ObjectID TaskManager::TaskGeneratorId(const TaskID &task_id) const {
   return it->second.spec.ReturnId(0);
 }
 
+void TaskManager::CleanUpExecutionObjects(const TaskID &task_id) {
+  TaskSpecification spec;
+  {
+    absl::MutexLock lock(&mu_);
+    auto it = submissible_tasks_.find(task_id);
+    RAY_CHECK(it != submissible_tasks_.end())
+        << "Tried to fail task that was not pending " << task_id;
+    RAY_CHECK(it->second.IsPending())
+        << "Tried to fail task that was not pending " << task_id;
+    spec = it->second.spec;
+  }
+
+  if (spec.HasDestroyable()) {
+    auto callback = [this](const std::vector<ObjectID> &object_ids) {
+      reference_counter_->BatchDelete(object_ids);
+    };
+    spec.CleanUpObjects(callback);
+  }
+}
+
 }  // namespace core
 }  // namespace ray

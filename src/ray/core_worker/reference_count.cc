@@ -466,28 +466,28 @@ void ReferenceCounter::DecrementPlacementOptionReference(const ObjectID &object_
 
 /// Add an ActorID that required the specified placementgroup upon instantiation
 void ReferenceCounter::AddPlacementRequiredReference(const ObjectID &placement_id,
-                                                     const ActorID &actor_id) {
+                                                     const ObjectID &object_id) {
 
-  if (placement_id.IsNil() || actor_id.IsNil()) {
+  if (placement_id.IsNil() || object_id.IsNil()) {
     return;
   }
 
   auto it = object_id_refs_.find(placement_id);
   RAY_CHECK(it != object_id_refs_.end()) << placement_id;
-  it->second.mutable_required()->required.insert(actor_id).second;
+  it->second.mutable_required()->required.insert(object_id).second;
   RAY_LOG(DEBUG) << "Add Required Actor Reference" << placement_id;
 
 }
 
 void ReferenceCounter::RemovePlacementRequiredReference(const ObjectID &placement_id,
-                                                        const ActorID &actor_id) {
+                                                        const ObjectID &object_id) {
   
-  if (placement_id.IsNil() || actor_id.IsNil()) {
+  if (placement_id.IsNil() || object_id.IsNil()) {
     return;
   }
 
   auto it = object_id_refs_.find(placement_id);
-  RAY_CHECK(it->second.mutable_required()->required.erase(actor_id));
+  RAY_CHECK(it->second.mutable_required()->required.erase(object_id));
 
 }
 
@@ -932,6 +932,11 @@ ReferenceCounter::GetAllReferenceCounts() const {
   std::unordered_map<ObjectID, std::pair<size_t, size_t>> all_ref_counts;
   all_ref_counts.reserve(object_id_refs_.size());
   for (const auto &[id, ref] : object_id_refs_) {
+
+    if (phantom_references_.find(id) != phantom_references_.end()) {
+      continue;
+    }
+
     all_ref_counts.emplace(
         id, std::pair<size_t, size_t>(ref.local_ref_count, ref.submitted_task_ref_count));
   }

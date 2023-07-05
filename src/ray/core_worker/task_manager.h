@@ -485,7 +485,7 @@ class TaskManager : public TaskFinisherInterface, public TaskResubmissionInterfa
       absl::optional<const worker::TaskStatusEvent::TaskStateUpdate> state_update =
           absl::nullopt);
 
-  void CleanUpExecutionObjects(const std::vector<ObjectID> &object_ids);
+  void CleanUpExecutionObjects(const TaskID &task_id);
 
  private:
   struct TaskEntry {

@@ -153,7 +153,7 @@ TEST(PlacementGroupIDTest, TestPlacementGroup) {
   {
     // test get job id
     auto job_id = JobID::FromInt(1);
-    const PlacementGroupID placement_group_id = PlacementGroupID::Of(kDefaultJobId, kDefaultDriverTaskId, 1);
+    const PlacementGroupID placement_group_id = PlacementGroupID::Of(job_id, kDefaultDriverTaskId, 1);
     ASSERT_EQ(job_id, placement_group_id.JobId());
   }
 }

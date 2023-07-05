@@ -197,7 +197,8 @@ void ActorManager::WaitForActorOutOfScope(
       if (PlacementGroupHandleExists(actor_id)) {
         auto it = placement_group_handles_.find(actor_id);
         ObjectID pg_handle_id = it->second.GeneratePlacementHandle();
-        reference_counter_->RemovePlacementRequiredReference(pg_handle_id, actor_id);
+        reference_counter_->RemovePlacementRequiredReference(pg_handle_id, 
+                                ObjectID::ForActorHandle(actor_id));
         placement_group_handles_.erase(it);
       }
     };
@@ -213,7 +214,8 @@ void ActorManager::WaitForActorOutOfScope(
       if (PlacementGroupHandleExists(actor_id)) {
         auto it = placement_group_handles_.find(actor_id);
         ObjectID pg_object_id = it->second.GeneratePlacementHandle();
-        reference_counter_->RemovePlacementRequiredReference(pg_object_id, actor_id);
+        reference_counter_->RemovePlacementRequiredReference(pg_object_id, 
+                                ObjectID::ForActorHandle(actor_id));
         placement_group_handles_.erase(it);
       }
     }

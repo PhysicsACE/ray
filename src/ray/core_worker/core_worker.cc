@@ -987,12 +987,12 @@ void CoreWorker::RecordMetrics() {
 std::unordered_map<ObjectID, std::pair<size_t, size_t>>
 CoreWorker::GetAllReferenceCounts() const {
   auto counts = reference_counter_->GetAllReferenceCounts();
-  std::vector<ObjectID> actor_handle_ids = actor_manager_->GetActorHandleIDsFromHandles();
+  // std::vector<ObjectID> actor_handle_ids = actor_manager_->GetActorHandleIDsFromHandles();
   // Strip actor IDs from the ref counts since there is no associated ObjectID
   // in the language frontend.
-  for (const auto &actor_handle_id : actor_handle_ids) {
-    counts.erase(actor_handle_id);
-  }
+  // for (const auto &actor_handle_id : actor_handle_ids) {
+  //   counts.erase(actor_handle_id);
+  // }
   return counts;
 }
 
@@ -2011,7 +2011,7 @@ Status CoreWorker::CreateActor(const RayFunction &function,
     actor_creation_options.scheduling_strategy.placement_group_scheduling_strategy().placement_group_id()
   );
   ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
-  reference_counter_->AddPlacementRequiredReference(pg_handle_id, actor_id);
+  reference_counter_->AddPlacementRequiredReference(pg_handle_id, ObjectID::ForActorHandle(actor_id));
   const auto actor_name = actor_creation_options.name;
   const auto task_name =
       actor_name.empty()
@@ -2557,13 +2557,13 @@ void CoreWorker::RemovePlacementOptionReference(const PlacementGroupID &placemen
 void CoreWorker::AddPlacementRequiredReference(const PlacementGroupID &placement_group_id,
                                                const ActorID &actor_id) {
   ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
-  reference_counter_->AddPlacementRequiredReference(pg_object_id, actor_id);
+  reference_counter_->AddPlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
 }
 
 void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id,
                                                   const ActorID &actor_id) {
   ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
-  reference_counter_->RemovePlacementRequiredReference(pg_object_id, actor_id);
+  reference_counter_->RemovePlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
 }
 
 void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id) {
