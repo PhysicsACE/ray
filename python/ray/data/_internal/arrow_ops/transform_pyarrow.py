@@ -22,6 +22,13 @@ def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.
     #     else:
     #         keys.append(k[0], "ascending" if descending else "descending")
 
+    if key is None or len(key) == 0:
+        keys = []
+        for name in table.column_names:
+            keys.append((name, "ascending"))
+        indices = pac.sort_indices(table, sort_keys=keys)
+        return take_table(table, indices)
+
     indices = pac.sort_indices(table, sort_keys=key)
     return take_table(table, indices)
 
@@ -60,7 +67,10 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
     key based on the results of the previous i-1 keys.
     """
 
-    assert len(desired) == len(key)
+    if key is None or len(key) == 0:
+        key = []
+        for name in table.column_names:
+            key.append((name, "ascending"))
 
     left, right = 0, table.num_rows
     for i in range(len(desired)):

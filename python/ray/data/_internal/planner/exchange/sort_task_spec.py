@@ -115,9 +115,11 @@ class SortTaskSpec(ExchangeTaskSpec):
             builder.add_block(sample)
         samples = builder.build()
         orderstr = "descending" if descending else "ascending"
-        cols = []
-        for k in key:
-            cols.append(k[0])
+        cols = None
+        if key is not None:
+            cols = []
+            for k in key:
+                cols.append(k[0])
         sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
         sample_items = BlockAccessor.for_block(samples).to_numpy(cols)
         # column = key[0][0] if isinstance(key, list) else None
@@ -129,7 +131,7 @@ class SortTaskSpec(ExchangeTaskSpec):
         # ]
         # return ret[1:]
         if len(sample_items.keys()) == 1:
-            sample_table = sample_items[sample_items.keys()[0]]
+            sample_table = sample_items[list(sample_items.keys())[0]]
             ret = [
                 np.quantile(sample_table, q, interpolation="nearest")
                 for q in np.linspace(0, 1, num_reducers)

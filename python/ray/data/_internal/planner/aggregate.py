@@ -21,6 +21,7 @@ from ray.data.aggregate import AggregateFn
 from ray.data.context import DataContext
 from ray.data._internal.util import unify_block_metadata_schema
 from ray.data.block import normalize_keylist
+from ray.data._internal.util import row_zip
 
 
 
@@ -38,6 +39,7 @@ def generate_aggregate_fn(
         refs: List[RefBundle],
         ctx: TaskContext,
     ) -> Tuple[List[RefBundle], StatsDict]:
+        nonlocal key
         blocks = []
         metadata = []
         for ref_bundle in refs:
@@ -66,6 +68,10 @@ def generate_aggregate_fn(
                 key,
                 num_outputs,
             )
+            if len(boundaries) == 1:
+                boundaries = boundaries[0]
+            else:
+                boundaries = row_zip(boundaries)
 
         agg_spec = SortAggregateTaskSpec(
             boundaries=boundaries,

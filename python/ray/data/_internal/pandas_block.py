@@ -356,10 +356,10 @@ class PandasBlockAccessor(TableBlockAccessor):
     def sort_and_partition(
         self, boundaries: List[T], key: "SortKeyT", descending: bool
     ) -> List[Block]:
-        if len(key) > 1:
-            raise NotImplementedError(
-                "sorting by multiple columns is not supported yet"
-            )
+        # if len(key) > 1:
+        #     raise NotImplementedError(
+        #         "sorting by multiple columns is not supported yet"
+        #     )
 
         if self._table.shape[0] == 0:
             # If the pyarrow table is empty we may not have schema

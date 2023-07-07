@@ -15,11 +15,8 @@ from ray.data._internal.shuffle_and_partition import (
 from ray.data._internal.sort import sort_impl
 from ray.data._internal.split import _split_at_index, _split_at_indices
 from ray.data.block import (
-<<<<<<< HEAD
     _validate_key_fn,
     normalize_keylist,
-=======
->>>>>>> 48da83e87b9cd26b4e21f905091f020cd052be52
     Block,
     BlockAccessor,
     BlockExecStats,

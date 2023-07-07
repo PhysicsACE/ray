@@ -254,9 +254,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
             columns = self._table.column_names
             should_be_single_ndarray = False
         elif isinstance(columns, list):
-            should_be_single_ndarray = (
-                columns == self._table.column_names and self.is_tensor_wrapper()
-            )
+            should_be_single_ndarray = False
         else:
             columns = [columns]
             should_be_single_ndarray = True
@@ -444,7 +442,6 @@ class ArrowBlockAccessor(TableBlockAccessor):
         if len(boundaries) == 0:
             return [table]
 
-        col, _ = key[0]
         partitions = []
         # For each boundary value, count the number of items that are less
         # than it. Since the block is sorted, these counts partition the items
@@ -452,17 +449,10 @@ class ArrowBlockAccessor(TableBlockAccessor):
         # partition[i]. If `descending` is true, `boundaries` would also be
         # in descending order and we only need to count the number of items
         # *greater than* the boundary value instead.
-        if descending:
-            num_rows = len(table[col])
-            bounds = num_rows - np.searchsorted(
-                table[col], boundaries, sorter=np.arange(num_rows - 1, -1, -1)
-            )
-        else:
-            bounds = np.searchsorted(table[col], boundaries)
 
 
         bounds2 = searchsorted(table, boundaries, key, descending)
-        # print(boundaries, "bbbbbbbbbbbbbb", bounds, "fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", table[col], "keeeyyyyy", key)
+        print(boundaries, "bbbbbbbbbbbbbb","fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", "keeeyyyyy", key)
         last_idx = 0
         for idx in bounds2:
             partitions.append(table.slice(last_idx, idx - last_idx))

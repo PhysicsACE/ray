@@ -54,7 +54,7 @@ def generate_sort_fn(
         num_outputs = num_mappers
 
         # Sample boundaries for sort key.
-        boundaries = SortTaskSpec.sample_boundaries(blocks, key, num_outputs, ctx, descending)
+        boundaries = SortTaskSpec.sample_boundaries(blocks, key, num_outputs, descending)
         orderedBoundaries = []
         for i in range(len(key)):
             if key[i][1] == "descending":

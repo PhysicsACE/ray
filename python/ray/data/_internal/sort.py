@@ -124,9 +124,11 @@ def sample_boundaries(
         builder.add_block(sample)
     samples = builder.build()
     orderstr = "descending" if descending else "ascending"
-    cols = []
-    for k in key:
-        cols.append(k[0])
+    cols = None
+    if key is not None:
+        cols = []
+        for k in key:
+            cols.append(k[0])
     sample_items = BlockAccessor.for_block(samples).sorted_boundaries([(key, orderstr)] if isinstance(key, str) else key, descending)
     sample_items = BlockAccessor.for_block(samples).to_numpy(cols)
     if len(sample_items.keys()) == 1:
@@ -196,7 +198,7 @@ def sort_impl(
     else:
         sort_op_cls = SimpleSortOp
     sort_op = sort_op_cls(
-        map_args=[orderedBoundaries, key, descending], reduce_args=[key, descending]
+        map_args=[boundaries, key, descending], reduce_args=[key, descending]
     )
     return sort_op.execute(
         blocks,
