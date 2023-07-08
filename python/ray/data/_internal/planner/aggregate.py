@@ -54,14 +54,12 @@ def generate_aggregate_fn(
 
         num_mappers = len(blocks)
 
-        if key is None:
+        if len(key) == 0:
             num_outputs = 1
             boundaries = []
         else:
             # Use same number of output partitions.
             num_outputs = num_mappers
-            if not callable(key):
-                key = normalize_keylist(key, False)
             # Sample boundaries for aggregate key.
             boundaries = SortTaskSpec.sample_boundaries(
                 blocks,

@@ -47,7 +47,7 @@ class SortAggregateTaskSpec(ExchangeTaskSpec):
 
         block = SortAggregateTaskSpec._prune_unused_columns(block, key, aggs)
 
-        if key is None:
+        if len(key) == 0:
             partitions = [block]
         else:
             partitions = BlockAccessor.for_block(block).sort_and_partition(

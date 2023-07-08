@@ -41,9 +41,11 @@ class _GroupbyOp(ShuffleOp):
         """Partition the block and combine rows with the same key."""
         stats = BlockExecStats.builder()
 
+        print("DetermineeeedAGGGGGGGGSSS", aggs)
+
         block = _GroupbyOp._prune_unused_columns(block, key, aggs)
 
-        if key is None:
+        if len(key) == 0:
             partitions = [block]
         else:
             partitions = BlockAccessor.for_block(block).sort_and_partition(
@@ -160,7 +162,7 @@ class GroupedData:
 
             num_mappers = blocks.initial_num_blocks()
             num_reducers = num_mappers
-            if self._key is None:
+            if len(self._key) == 0:
                 num_reducers = 1
                 boundaries = []
             else:
@@ -172,10 +174,10 @@ class GroupedData:
                     num_reducers,
                     task_ctx,
                 )
-            if len(boundaries) == 1:
-                boundaries = boundaries[0]
-            else:
-                boundaries = row_zip(boundaries)
+                if len(boundaries) == 1:
+                    boundaries = boundaries[0]
+                else:
+                    boundaries = row_zip(boundaries)
             ctx = DataContext.get_current()
             if ctx.use_push_based_shuffle:
                 shuffle_op_cls = PushBasedGroupbyOp
@@ -230,8 +232,11 @@ class GroupedData:
         multi-aggregation on all columns for an Arrow Dataset, and a single
         aggregation on the entire row for a simple Dataset.
         """
+        cols = []
+        for k in self._key:
+            cols.append(k[0])
         aggs = self._dataset._build_multicolumn_aggs(
-            agg_cls, on, ignore_nulls, *args, skip_cols=self._key, **kwargs
+            agg_cls, on, ignore_nulls, *args, skip_cols=cols, **kwargs
         )
         return self.aggregate(*aggs)
 
@@ -302,7 +307,7 @@ class GroupedData:
         # Globally sort records by key.
         # Note that sort() will ensure that records of the same key partitioned
         # into the same block.
-        if self._key is not None:
+        if len(self._key) != 0:
             sorted_ds = self._dataset.sort(self._key)
         else:
             sorted_ds = self._dataset.repartition(1)
@@ -313,19 +318,24 @@ class GroupedData:
 
             boundaries = []
             # Get the keys of the batch in numpy array format
-            keys = block_accessor.to_numpy(self._key)
+            cols = None
+            if len(self._key) != 0:
+                cols = []
+                for k in self._key:
+                    cols.append(k[0])
+            
+            keys = block_accessor.to_numpy(cols)
             order = []
             zipStack = dict_tonumpy(keys)
             for k, _ in keys.items():
                 order.append((k, "ascending"))
             keyRows = row_zip(zipStack)
-            currKey = keyRows[0]
             start = 0
+            print("KKKEEEEEYYYYROOOWWW", keyRows)
             while start < keyRows.size:
-                end = start + custom_searchsorted(zipStack[:, start:], currKey, order)
+                end = start + custom_searchsorted(keyRows[start:], keyRows[start], order)
                 boundaries.append(end)
                 start = end
-                currKey = keyRows[end]
             return boundaries
 
         # The batch is the entire block, because we have batch_size=None for

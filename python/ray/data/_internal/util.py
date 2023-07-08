@@ -519,29 +519,28 @@ def unify_block_metadata_schema(
 
 # Return a list of zipped indices of given array
 def row_zip(arr: List[List[Any]]) -> List[Any]:
-    if len(arr) == 1:
-        return arr[0]
     tup = tuple(arr)
     return np.column_stack(tup)
 
 
 def dict_tonumpy(table: Dict[str, np.ndarray]) -> np.ndarray:
-    arr = np.array([v for _, v in table.items()])
-    return arr
+    new_arr = []
+    for _, v in table.items():
+        new_arr.append(v)
+    return np.array(new_arr)
 
 
 def custom_searchsorted(table: np.ndarray, val: List[Any], order: List[bool], descending: bool = False) -> int:
     
-    left, right = 0, table.shape[-1]
+    left, right = 0, table.shape[0]
     for i in range(len(val)):
         if order[i][1] == "ascending":
             dir = True 
         else:
             dir = False
-        colVals = table[i][left:right]
+        colVals = table[:, i]
         desiredVal = val[i]
         prevleft = left
-        numrows = right - left
 
         if not dir:
             left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, -1, -1)))

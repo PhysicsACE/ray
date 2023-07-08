@@ -455,7 +455,7 @@ class PandasBlockAccessor(TableBlockAccessor):
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
-            if key is None:
+            if len(key) == 0:
                 # Global aggregation consists of a single "group", so we short-circuit.
                 yield None, self.to_block()
                 return
@@ -489,9 +489,11 @@ class PandasBlockAccessor(TableBlockAccessor):
 
             # Build the row.
             row = {}
-            if key is not None:
+            if len(key) != 0:
                 for i in range(len(key_cols)):
                     row[key_cols[i]] = group_key[i]
+            
+            print("keyROOOOOOOOOOOW", row)
 
             count = collections.defaultdict(int)
             for agg, accumulator in zip(aggs, accumulators):
@@ -591,7 +593,7 @@ class PandasBlockAccessor(TableBlockAccessor):
         """
 
         stats = BlockExecStats.builder()
-        key_fn = (lambda r: tuple(r[r._row.columns[i]] for i in range(len(key)))) if key is not None else (lambda r: 0)
+        key_fn = (lambda r: tuple(r[r._row.columns[i]] for i in range(len(key)))) if len(key) != 0 else (lambda r: 0)
 
         iter = heapq.merge(
             *[
@@ -610,7 +612,7 @@ class PandasBlockAccessor(TableBlockAccessor):
                 next_key = key_fn(next_row)
                 if not isinstance(next_key, str):
                     print("AfterROOOOOOOOOOO", next_row)
-                next_key_name = tuple(next_row._row.columns[i] for i in range(len(key))) if key is not None else None
+                next_key_name = tuple(next_row._row.columns[i] for i in range(len(key))) if len(key) != 0 else None
 
                 def gen():
                     nonlocal iter
@@ -649,7 +651,7 @@ class PandasBlockAccessor(TableBlockAccessor):
                             )
                 # Build the row.
                 row = {}
-                if key is not None:
+                if len(key) != 0:
                     # row[next_key_name] = next_key
                     for i in range(len(next_key_name)):
                         row[next_key_name[i]] = next_key[i]
@@ -661,7 +663,7 @@ class PandasBlockAccessor(TableBlockAccessor):
                         row[agg_name] = agg.finalize(accumulator)
                     else:
                         row[agg_name] = accumulator
-
+                print("FinalROOOOOOOOOOO", row)
                 builder.add(row)
             except StopIteration:
                 break

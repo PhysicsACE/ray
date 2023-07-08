@@ -515,7 +515,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
-            if key is None:
+            if len(key) == 0:
                 # Global aggregation consists of a single "group", so we short-circuit.
                 yield None, self.to_block()
                 return
@@ -549,7 +549,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
             # Build the row.
             row = {}
-            if key is not None:
+            if len(key) != 0:
                 for i in range(len(key_cols)):
                     row[key_cols[i]] = group_key[i]
 
@@ -612,7 +612,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         stats = BlockExecStats.builder()
         key_fn = (
-            (lambda r: tuple(r[r._row.schema.names[i]] for i in range(len(key)))) if key is not None else (lambda r: 0)
+            (lambda r: tuple(r[r._row.schema.names[i]] for i in range(len(key)))) if len(key) != 0 else (lambda r: 0)
         )
 
         iter = heapq.merge(
@@ -629,7 +629,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
                 if next_row is None:
                     next_row = next(iter)
                 next_key = key_fn(next_row)
-                next_key_name = tuple(next_row._row.schema.names[i] for i in range(len(key))) if key is not None else None
+                next_key_name = tuple(next_row._row.schema.names[i] for i in range(len(key))) if len(key) != 0 else None
 
                 def gen():
                     nonlocal iter
@@ -668,7 +668,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
                             )
                 # Build the row.
                 row = {}
-                if key is not None:
+                if len(key) != 0:
                     # row[next_key_name] = next_key
                     for i in range(len(next_key_name)):
                         row[next_key_name[i]] = next_key[i]
