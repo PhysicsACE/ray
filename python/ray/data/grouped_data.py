@@ -343,7 +343,7 @@ class GroupedData:
         def group_fn(batch):
             block = BlockAccessor.batch_to_block(batch)
             block_accessor = BlockAccessor.for_block(block)
-            if self._key:
+            if len(self._key) > 0:
                 boundaries = get_key_boundaries(block_accessor)
             else:
                 boundaries = [block_accessor.num_rows()]

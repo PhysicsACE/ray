@@ -125,7 +125,7 @@ def sample_boundaries(
     samples = builder.build()
     orderstr = "descending" if descending else "ascending"
     cols = None
-    if key is not None:
+    if len(key) > 0:
         cols = []
         for k in key:
             cols.append(k[0])
