@@ -968,7 +968,7 @@ def test_groupby_arrow_multi_agg_alias(ray_start_regular_shared, num_parts):
             assert math.isclose(result, expected)
         else:
             assert result == expected
-
+#kdfjkdfdlkfldkfldkfldkfldkfdf
 
 # @pytest.mark.skipif(STRICT_MODE, reason="Deprecated in strict mode")
 # def test_groupby_simple(ray_start_regular_shared):
@@ -1646,7 +1646,7 @@ def test_groupby_map_groups_with_different_types(ray_start_regular_shared):
 #             assert math.isclose(result, expected)
 #         else:
 #             assert result == expected
-
+# jfkdjfkdjfkdjfkdjfkdjfdkjff
 
 def test_random_block_order_schema(ray_start_regular_shared):
     df = pd.DataFrame({"a": np.random.rand(10), "b": np.random.rand(10)})

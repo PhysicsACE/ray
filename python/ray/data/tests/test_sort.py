@@ -472,7 +472,7 @@ def test_push_based_shuffle_reduce_stage_scheduling(ray_start_cluster, pipeline)
         ray.get = ray_get
 
 @pytest.mark.parametrize("num_items,parallelism", [(100, 1), (1000, 4)])
-@pytest.mark.parametrize("use_polars", [True, True])
+@pytest.mark.parametrize("use_polars", [False, True])
 def test_sort_arrow(
     ray_start_regular, num_items, parallelism, use_push_based_shuffle, use_polars
 ):
