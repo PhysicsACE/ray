@@ -926,8 +926,7 @@ std::unordered_set<ObjectID> ReferenceCounter::GetAllInScopeObjectIDs() const {
   return in_scope_object_ids;
 }
 
-std::unordered_map<ObjectID, std::pair<size_t, size_t>>
-ReferenceCounter::GetAllReferenceCounts() const {
+std::unordered_map<ObjectID, std::pair<size_t, size_t>> ReferenceCounter::GetAllReferenceCounts() const {
   absl::MutexLock lock(&mutex_);
   std::unordered_map<ObjectID, std::pair<size_t, size_t>> all_ref_counts;
   all_ref_counts.reserve(object_id_refs_.size());

@@ -984,8 +984,7 @@ void CoreWorker::RecordMetrics() {
   memory_store_->RecordMetrics();
 }
 
-std::unordered_map<ObjectID, std::pair<size_t, size_t>>
-CoreWorker::GetAllReferenceCounts() const {
+std::unordered_map<ObjectID, std::pair<size_t, size_t>> CoreWorker::GetAllReferenceCounts() const {
   auto counts = reference_counter_->GetAllReferenceCounts();
   // std::vector<ObjectID> actor_handle_ids = actor_manager_->GetActorHandleIDsFromHandles();
   // Strip actor IDs from the ref counts since there is no associated ObjectID
