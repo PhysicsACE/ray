@@ -61,3 +61,12 @@ class SortKey:
         
         self.curr_index += 1
         return curr, self.key[curr]
+    
+    def __repr__(self):
+        builder = "["
+        for i in range(self.len):
+            builder += "(" + self.key[i][0] + "," + self.key[i][1] + ")"
+            if i + 1 != self.len:
+                builder += ","
+        builder += "]"
+        return builder

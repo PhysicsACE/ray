@@ -232,7 +232,7 @@ def test_unique(ray_start_regular_shared):
 
 def test_grouped_dataset_repr(ray_start_regular_shared):
     ds = ray.data.from_items([{"key": "spam"}, {"key": "ham"}, {"key": "spam"}])
-    assert repr(ds.groupby("key")) == f"GroupedData(dataset={ds!r}, key='key')"
+    assert repr(ds.groupby("key")) == f"GroupedData(dataset={ds!r}, key=[(key,ascending)])"
 
 
 def test_groupby_arrow(ray_start_regular_shared, use_push_based_shuffle):

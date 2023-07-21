@@ -316,10 +316,8 @@ class GroupedData:
             zipStack = dict_tonumpy(keys)
             keyRows = row_zip(zipStack)
             start = 0
-            print("KEEEEEEYYYYYYY", keyRows)
             while start < np.size(keyRows, 0):
                 end = start + custom_searchsorted(keyRows[start:], keyRows[start], order)
-                print(keyRows[start], keyRows, order, end)
                 boundaries.append(end)
                 start = end
             return boundaries
@@ -335,7 +333,6 @@ class GroupedData:
                 boundaries = [block_accessor.num_rows()]
             builder = DelegatingBlockBuilder()
             start = 0
-            print("BOOOOUFIFIFIFF", boundaries)
             for end in boundaries:
                 group_block = block_accessor.slice(start, end)
                 group_block_accessor = BlockAccessor.for_block(group_block)
