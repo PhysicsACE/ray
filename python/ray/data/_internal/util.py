@@ -529,16 +529,26 @@ def dict_tonumpy(table: Dict[str, np.ndarray]) -> np.ndarray:
         new_arr.append(v)
     return np.array(new_arr)
 
+def columnar_sort(table: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    new_dict = {}
+    for k, v in table.items():
+        new_dict[k] = np.sort(v)
+    return new_dict
+
 
 def custom_searchsorted(table: np.ndarray, val: List[Any], order: List[bool], descending: bool = False) -> int:
     
     left, right = 0, table.shape[0]
     for i in range(len(val)):
+
+        if left == right:
+            return right
+
         if order[i][1] == "ascending":
             dir = True 
         else:
             dir = False
-        colVals = table[:, i]
+        colVals = table[:, i][left:right]
         desiredVal = val[i]
         prevleft = left
 

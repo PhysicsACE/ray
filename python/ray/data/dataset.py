@@ -1700,7 +1700,7 @@ class Dataset:
             logical_plan,
         )
 
-    def groupby(self, key: Optional[str]) -> "GroupedData":
+    def groupby(self, key: Optional[Union[str, List[str]]]) -> "GroupedData":
         """Group the dataset by the key function or column name.
 
         Examples:
@@ -1724,8 +1724,9 @@ class Dataset:
 
         # Always allow None since groupby interprets that as grouping all
         # records into a single global group.
+
         if key is not None:
-            _validate_key_fn(self.schema(fetch_if_missing=True), key, True)
+            _validate_key_fn(self.schema(fetch_if_missing=True), key)
 
         return GroupedData(self, key)
 
@@ -2014,7 +2015,7 @@ class Dataset:
         ret = self._aggregate_on(Std, on, ignore_nulls, ddof=ddof)
         return self._aggregate_result(ret)
 
-    def sort(self, key: Optional[str] = None, descending: bool = False) -> "Dataset":
+    def sort(self, key: Optional[Union[str, Tuple[str, str]]] = None, descending: bool = False) -> "Dataset":
         """Sort the dataset by the specified key column or key function.
 
         Examples:

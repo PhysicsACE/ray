@@ -21,6 +21,7 @@ import numpy as np
 import ray
 from ray import ObjectRefGenerator
 from ray.data._internal.util import _check_pyarrow_version, _truncated_repr
+from ray.data._internal.sort_key import SortKey
 from ray.types import ObjectRef
 from ray.util.annotations import DeveloperAPI
 
@@ -61,7 +62,9 @@ def _validate_key_fn(
         # Dataset is empty/cleared, validation not possible.
         return
     is_simple_format = isinstance(schema, type)
-    if isinstance(key, str):
+    if isinstance(key, SortKey):
+        return
+    elif isinstance(key, str):
         if is_simple_format:
             raise ValueError(
                 "String key '{}' requires dataset format to be "
@@ -137,20 +140,6 @@ def _validate_key_fn(
     else:
         raise TypeError("Invalid key type {} ({}).".format(key, type(key)))
     
-
-def normalize_keylist(key: List[Any], descending: bool) -> List[Tuple[str, str]]:
-    normalized = []
-    if isinstance(key, str):
-        normalized.append((key, "descending" if descending else "ascending"))
-        return normalized
-    elif isinstance(key, list):
-        for k in key:
-            if isinstance(k, str):
-                normalized.append((k, "descending" if descending else "ascending"))
-            else:
-                normalized.append(k)
-    return normalized
-
 
 # Represents a batch of records to be stored in the Ray object store.
 #

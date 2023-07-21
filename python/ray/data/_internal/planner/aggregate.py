@@ -20,7 +20,6 @@ from ray.data._internal.util import unify_block_metadata_schema
 from ray.data.aggregate import AggregateFn
 from ray.data.context import DataContext
 from ray.data._internal.util import unify_block_metadata_schema
-from ray.data.block import normalize_keylist
 from ray.data._internal.util import row_zip
 
 

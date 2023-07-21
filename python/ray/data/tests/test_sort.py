@@ -514,37 +514,12 @@ def test_sort_arrow(
             )
 
         assert_sorted(ds.sort([("year", "ascending"), ("score", "descending")]), zip(reversed(year), list(reversed(score[half:])) + list(reversed(score[:half]))))
+        assert_sorted(ds.sort([("year", "ascending"), "score"], descending=True), zip(reversed(year), list(reversed(score[half:])) + list(reversed(score[:half]))))
     finally:
         ctx.use_polars = original_use_polars
 
 @pytest.mark.parametrize("num_items,parallelism", [(100, 1), (1000, 4)])
 def test_pandas_multisort(ray_start_regular, num_items, parallelism, use_push_based_shuffle):
-#     a = list(reversed(range(num_items)))
-#     b = [f"{x:03}" for x in range(num_items)]
-#     shard = int(np.ceil(num_items / parallelism))
-#     offset = 0
-#     dfs = []
-#     while offset < num_items:
-#         dfs.append(
-#             pd.DataFrame(
-#                 {"a": a[offset : offset + shard], "b": b[offset : offset + shard]}
-#             )
-#         )
-#         offset += shard
-#     if offset < num_items:
-#         dfs.append(pd.DataFrame({"a": a[offset:], "b": b[offset:]}))
-#     ds = ray.data.from_pandas(dfs)
-
-#     def assert_sorted(sorted_ds, expected_rows):
-#         assert [tuple(row.values()) for row in sorted_ds.iter_rows()] == list(
-#             expected_rows
-#         )
-
-#     assert_sorted(ds.sort(key="a"), zip(reversed(a), reversed(b)))
-#     # Make sure we have rows in each block.
-#     assert len([n for n in ds.sort(key="a")._block_num_rows() if n > 0]) == parallelism
-#     assert_sorted(ds.sort(key="b"), zip(a, b))
-#     assert_sorted(ds.sort(key="a", descending=True), zip(a, b))
     half = int(np.ceil(num_items / 2))
     year = []
     score = []

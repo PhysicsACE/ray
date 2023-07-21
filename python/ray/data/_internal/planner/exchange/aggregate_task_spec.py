@@ -52,7 +52,7 @@ class SortAggregateTaskSpec(ExchangeTaskSpec):
         else:
             partitions = BlockAccessor.for_block(block).sort_and_partition(
                 boundaries,
-                [(key, "ascending")] if isinstance(key, str) else key,
+                key,
                 descending=False,
             )
         parts = [BlockAccessor.for_block(p).combine(key, aggs) for p in partitions]
@@ -82,13 +82,8 @@ class SortAggregateTaskSpec(ExchangeTaskSpec):
         prune_columns = True
         columns = set()
 
-        if isinstance(key, str):
-            columns.add(key)
-        elif isinstance(key, list):
-            for k in key:
-                columns.add(k[0])
-        elif callable(key):
-            prune_columns = False
+        for _, k in key:
+            columns.add(k[0])
 
         for agg in aggs:
             if isinstance(agg, _AggregateOnKeyBase) and isinstance(agg._key_fn, str):

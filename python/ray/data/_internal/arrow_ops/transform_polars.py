@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, List, Any
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.data._internal.progress_bar import ProgressBar
 import numpy as np
+from ray.data._internal.sort_key import SortKey
 
 try:
     import pyarrow
@@ -28,27 +29,14 @@ def check_polars_installed():
 
 def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     check_polars_installed()
-    col, order = [], []
-    for k in key:
-        col.append(k[0])
-        if k[1] == "ascending":
-            order.append(False)
-            continue
-        order.append(True)
+    col, order = key.to_polars_sort_args()
     df = pl.from_arrow(table)
     return df.sort(col, reverse=order).to_arrow()
 
 
 def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     check_polars_installed()
-    cols, order = [], []
-    for c in key:
-        cols.append(c[0])
-        if c[1] == "ascending":
-            order.append(True)
-            continue
-        order.append(False)
-
+    cols, order = key.to_polars_sort_args()
     df = pl.from_arrow(table)
     return df.arg_sort_by(cols, descending=order)
 
@@ -59,12 +47,13 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[int], key: "SortKeyT",
     maintain ordering of the sorted table. 
     """
     check_polars_installed()
-    partitionIdx = cached_remote_fn(find_partitionIdx)
+    # partitionIdx = cached_remote_fn(find_partitionIdx)
     df = pl.from_arrow(table)
-    print("converted tablllelelelelele", df.get_column(key[0][0]).to_numpy())
-    bound_results = [partitionIdx.remote(df, [i] if not isinstance(i, list) else i, key, descending) for i in boundaries]
-    bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
-    bounds = bounds_bar.fetch_until_complete(bound_results)
+    # bound_results = [partitionIdx.remote(df, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
+    # bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
+    # bounds = bounds_bar.fetch_until_complete(bound_results)
+    bounds = [find_partitionIdx(df, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
+
     return bounds
 
 
@@ -82,12 +71,20 @@ def find_partitionIdx(table: Any, desired: List[Any], key:"SortKeyT", descending
     key based on the results of the previous i-1 keys.
     """
     
-    assert len(desired) == len(key)
+    normalizedkey = key.normalized_key()
+
+    if len(normalizedkey) == 0:
+        for name in table.column_names:
+            normalizedkey.append((name, "ascending"))
 
     left, right = 0, table.height
     for i in range(len(desired)):
-        colName = key[i][0]
-        if key[i][1] == "ascending":
+
+        if left == right:
+            return right
+
+        colName = normalizedkey[i][0]
+        if normalizedkey[i][1] == "ascending":
             dir = True 
         else:
             dir = False
@@ -109,13 +106,7 @@ def concat_and_sort(
     blocks: List["pyarrow.Table"], key: "SortKeyT", descending: bool
 ) -> "pyarrow.Table":
     check_polars_installed()
-    col, order = [], []
-    for k in key:
-        col.append(k[0])
-        if k[1] == "ascending":
-            order.append(False)
-            continue
-        order.append(True)
+    col, order = key.to_polars_sort_args()
 
     blocks = [pl.from_arrow(block) for block in blocks]
     df = pl.concat(blocks).sort(col, reverse=order)

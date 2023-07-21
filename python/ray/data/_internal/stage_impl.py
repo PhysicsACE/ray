@@ -13,10 +13,10 @@ from ray.data._internal.shuffle_and_partition import (
     SimpleShufflePartitionOp,
 )
 from ray.data._internal.sort import sort_impl
+from ray.data._internal.sort_key import SortKey
 from ray.data._internal.split import _split_at_index, _split_at_indices
 from ray.data.block import (
     _validate_key_fn,
-    normalize_keylist,
     Block,
     BlockAccessor,
     BlockExecStats,
@@ -331,10 +331,9 @@ class SortStage(AllToAllStage):
                 blocks = block_list
             schema = ds.schema(fetch_if_missing=True)
             _validate_key_fn(schema, key)
-            normalizedKey = key
-            if not callable(key):
-                normalizedKey = normalize_keylist(key, descending)
-            return sort_impl(blocks, clear_input_blocks, normalizedKey, descending, ctx)
+            if not callable(key) and not isinstance(key, SortKey):
+                key = SortKey(key, descending)
+            return sort_impl(blocks, clear_input_blocks, key, descending, ctx)
 
         super().__init__(
             "Sort",

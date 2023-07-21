@@ -235,9 +235,3 @@ class TableBlockAccessor(BlockAccessor):
             return self._empty_table()
         k = min(n_samples, self.num_rows())
         return self._sample(k, key)
-    
-    def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> Any:
-        raise NotImplementedError
-    
-    def sorted_boundaries(self, key: "SortKeyT", descending: bool) -> Any:
-        return self._sorted_boundaries(key, descending)

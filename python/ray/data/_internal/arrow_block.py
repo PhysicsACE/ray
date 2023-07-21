@@ -37,6 +37,7 @@ from ray.data.block import (
 )
 from ray.data.context import DataContext
 from ray.data.row import TableRow
+from ray.data._internal.sort_key import SortKey
 
 try:
     import pyarrow
@@ -75,6 +76,9 @@ def get_concat_and_sort_transform(context: DataContext) -> Callable:
         return transform_pyarrow.concat_and_sort
     
 def get_searchsorted_transform(context: DataContext) -> Callable:
+    if context.use_polars:
+        return transform_polars.searchsorted
+    
     return transform_pyarrow.searchsorted
 
 
@@ -340,7 +344,7 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
     def _sample(self, n_samples: int, key: "SortKeyT") -> "pyarrow.Table":
         indices = random.sample(range(self._table.num_rows), n_samples)
-        table = self._table.select([k[0] for k in key])
+        table = self._table.select([k for k in key.get_columns()])
         return transform_pyarrow.take_table(table, indices)
 
     def count(self, on: str) -> Optional[U]:
@@ -425,10 +429,6 @@ class ArrowBlockAccessor(TableBlockAccessor):
     def sort_and_partition(
         self, boundaries: List[T], key: "SortKeyT", descending: bool
     ) -> List["Block"]:
-        # if len(key) > 1:
-        #     raise NotImplementedError(
-        #         "sorting by multiple columns is not supported yet"
-        #     )
 
         if self._table.num_rows == 0:
             # If the pyarrow table is empty we may not have schema
@@ -451,10 +451,9 @@ class ArrowBlockAccessor(TableBlockAccessor):
         # *greater than* the boundary value instead.
 
 
-        bounds2 = searchsorted(table, boundaries, key, descending)
-        print(boundaries, "bbbbbbbbbbbbbb","fkdjfdkfjdkfjdkjf", bounds2, "ccccccooooolllllss", "keeeyyyyy", key)
+        bounds = searchsorted(table, boundaries, key, descending)
         last_idx = 0
-        for idx in bounds2:
+        for idx in bounds:
             partitions.append(table.slice(last_idx, idx - last_idx))
             last_idx = idx
         partitions.append(table.slice(last_idx))
@@ -475,43 +474,19 @@ class ArrowBlockAccessor(TableBlockAccessor):
             aggregation.
             If key is None then the k column is omitted.
         """
-        if key is not None and not isinstance(key, str) and not isinstance(key, list):
+        if key is not None and not isinstance(key, SortKey):
             raise ValueError(
                 "key must be a string, a list of strings or None when aggregating on Arrow blocks, but "
                 f"got: {type(key)}."
             )
         
-        key_cols = []
-        if isinstance(key, list):
-            for k in key:
-                key_cols.append(k[0])
-        else:
-            key_cols.append(key)
+        key_cols = key.get_columns()
 
         def extract_key(row) -> Union[Any, List[Any]]:
             currVals = []
             for k in key_cols:
                 currVals.append(row[k])
             return currVals
-        
-        def pretty_grouping(k: Union[Any, List[Any]]) -> str:
-            if isinstance(k, str):
-                return json.dumps({key_cols[0]: k})
-            elif isinstance(k, list):
-                keyDict = {key_cols[0]: k[0]}
-                for i in range(1, len(k)):
-                    keyDict[key_cols[i]] = k[i]
-                return json.dumps(keyDict)
-            else:
-                return json.dumps({key_cols[0]: k})
-
-        def serializedKey() -> str:
-            if isinstance(key, str):
-                return key
-            serialized = k[0]
-            for i in range(1, len(key)):
-                serialized += "," + key[i]
-            return serialized
 
         def iter_groups() -> Iterator[Tuple[KeyType, Block]]:
             """Creates an iterator over zero-copy group views."""
@@ -687,10 +662,6 @@ class ArrowBlockAccessor(TableBlockAccessor):
 
         ret = builder.build()
         return ret, ArrowBlockAccessor(ret).get_metadata(None, exec_stats=stats.build())
-    
-    def _sorted_boundaries(self, key: "SortKeyT", descending: bool) -> "pyarrow.Table":
-        concat_and_sort = get_sort_transform(DataContext.get_current())
-        return concat_and_sort(self._table, key, descending)
 
 
 def _copy_table(table: "pyarrow.Table") -> "pyarrow.Table":

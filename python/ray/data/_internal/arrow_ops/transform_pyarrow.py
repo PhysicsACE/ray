@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, List, Union, Any
 from ray.data._internal.remote_fn import cached_remote_fn
 from ray.data._internal.progress_bar import ProgressBar
 import numpy as np
+from ray.data._internal.sort_key import SortKey
 
 try:
     import pyarrow
@@ -22,21 +23,21 @@ def sort(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.
     #     else:
     #         keys.append(k[0], "ascending" if descending else "descending")
 
-    if key is None or len(key) == 0:
+    if len(key) == 0:
         keys = []
         for name in table.column_names:
             keys.append((name, "ascending"))
         indices = pac.sort_indices(table, sort_keys=keys)
         return take_table(table, indices)
 
-    indices = pac.sort_indices(table, sort_keys=key)
+    indices = pac.sort_indices(table, sort_keys=key.to_arrow_sort_args())
     return take_table(table, indices)
 
 
 def sort_indices(table: "pyarrow.Table", key: "SortKeyT", descending: bool) -> "pyarrow.Table":
     import pyarrow.compute as pac
 
-    indices = pac.sort_indices(table, sort_keys=key)
+    indices = pac.sort_indices(table, sort_keys=key.to_arrow_sort_args())
     return indices
 
 
@@ -46,10 +47,12 @@ def searchsorted(table: "pyarrow.Table", boundaries: List[Union[int, List[int]]]
     maintain ordering of the sorted table. 
     """
 
-    partitionIdx = cached_remote_fn(find_partitionIdx)
-    bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
-    bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
-    bounds = bounds_bar.fetch_until_complete(bound_results)
+    # partitionIdx = cached_remote_fn(find_partitionIdx)
+    # bound_results = [partitionIdx.remote(table, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
+    # bounds_bar = ProgressBar("Sort and Partition", len(bound_results))
+    # bounds = bounds_bar.fetch_until_complete(bound_results)
+    bounds = [find_partitionIdx(table, [i] if not isinstance(i, np.ndarray) else i, key, descending) for i in boundaries]
+
     return bounds
 
 
@@ -67,15 +70,20 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
     key based on the results of the previous i-1 keys.
     """
 
-    if key is None or len(key) == 0:
-        key = []
+    normalizedkey = key.normalized_key()
+
+    if len(normalizedkey) == 0:
         for name in table.column_names:
-            key.append((name, "ascending"))
+            normalizedkey.append((name, "ascending"))
 
     left, right = 0, table.num_rows
     for i in range(len(desired)):
-        colName = key[i][0]
-        if key[i][1] == "ascending":
+
+        if left == right:
+            return right
+
+        colName = normalizedkey[i][0]
+        if normalizedkey[i][1] == "ascending":
             dir = True 
         else:
             dir = False
@@ -84,7 +92,6 @@ def find_partitionIdx(table: "pyarrow.Table", desired: List[Any], key:"SortKeyT"
         prevleft = left
 
         if not dir:
-            print("yepeeeee")
             left = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="right", sorter=np.arange(len(colVals) - 1, prevleft - 1, -1)))
             right = prevleft + (len(colVals) - np.searchsorted(colVals, desiredVal, side="left", sorter=np.arange(len(colVals) - 1, prevleft - 1, -1)))
         else:
@@ -339,7 +346,7 @@ def concat_and_sort(
     import pyarrow.compute as pac
 
     ret = concat(blocks)
-    indices = pac.sort_indices(ret, sort_keys=key)
+    indices = pac.sort_indices(ret, sort_keys=key.to_arrow_sort_args())
     return take_table(ret, indices)
 
 

@@ -12,6 +12,7 @@ from ray.data._internal.push_based_shuffle import PushBasedShufflePlan
 from ._internal.table_block import TableBlockAccessor
 from ._internal.util import row_zip, dict_tonumpy, custom_searchsorted
 from ray.data._internal.shuffle import ShuffleOp, SimpleShufflePlan
+from ray.data._internal.sort_key import SortKey
 from ray.data.aggregate import AggregateFn, Count, Max, Mean, Min, Std, Sum
 from ray.data.aggregate._aggregate import _AggregateOnKeyBase
 from ray.data.block import (
@@ -21,7 +22,6 @@ from ray.data.block import (
     BlockMetadata,
     KeyType,
     UserDefinedFunction,
-    normalize_keylist
 )
 from ray.data.context import DataContext
 from ray.data.dataset import DataBatch, Dataset
@@ -41,8 +41,6 @@ class _GroupbyOp(ShuffleOp):
         """Partition the block and combine rows with the same key."""
         stats = BlockExecStats.builder()
 
-        print("DetermineeeedAGGGGGGGGSSS", aggs)
-
         block = _GroupbyOp._prune_unused_columns(block, key, aggs)
 
         if len(key) == 0:
@@ -50,7 +48,7 @@ class _GroupbyOp(ShuffleOp):
         else:
             partitions = BlockAccessor.for_block(block).sort_and_partition(
                 boundaries,
-                [(key, "ascending")] if isinstance(key, str) else key,
+                key,
                 descending=False,
             )
         parts = [BlockAccessor.for_block(p).combine(key, aggs) for p in partitions]
@@ -81,13 +79,8 @@ class _GroupbyOp(ShuffleOp):
         prune_columns = True
         columns = set()
 
-        if isinstance(key, str):
-            columns.add(key)
-        elif isinstance(key, list):
-            for k in key:
-                columns.add(k[0])
-        elif callable(key):
-            prune_columns = False
+        for _, k in key:
+            columns.add(k[0])
 
         for agg in aggs:
             if isinstance(agg, _AggregateOnKeyBase) and isinstance(agg._key_fn, str):
@@ -129,7 +122,7 @@ class GroupedData:
         Use the ``Dataset.groupby()`` method to construct one.
         """
         self._dataset = dataset
-        self._key = normalize_keylist(key, False)
+        self._key = SortKey(key, False)
 
     def __repr__(self) -> str:
         return (
@@ -168,9 +161,7 @@ class GroupedData:
             else:
                 boundaries = sort.sample_boundaries(
                     blocks.get_blocks(),
-                    [(self._key, "ascending")]
-                    if isinstance(self._key, str)
-                    else self._key,
+                    self._key,
                     num_reducers,
                     task_ctx,
                 )
@@ -233,7 +224,7 @@ class GroupedData:
         aggregation on the entire row for a simple Dataset.
         """
         cols = []
-        for k in self._key:
+        for _, k in self._key:
             cols.append(k[0])
         aggs = self._dataset._build_multicolumn_aggs(
             agg_cls, on, ignore_nulls, *args, skip_cols=cols, **kwargs
@@ -318,22 +309,17 @@ class GroupedData:
 
             boundaries = []
             # Get the keys of the batch in numpy array format
-            cols = None
-            if len(self._key) != 0:
-                cols = []
-                for k in self._key:
-                    cols.append(k[0])
+            cols = self._key.get_columns()
             
             keys = block_accessor.to_numpy(cols)
-            order = []
+            order = self._key.normalized_key()
             zipStack = dict_tonumpy(keys)
-            for k, _ in keys.items():
-                order.append((k, "ascending"))
             keyRows = row_zip(zipStack)
             start = 0
-            print("KKKEEEEEYYYYROOOWWW", keyRows)
-            while start < keyRows.size:
+            print("KEEEEEEYYYYYYY", keyRows)
+            while start < np.size(keyRows, 0):
                 end = start + custom_searchsorted(keyRows[start:], keyRows[start], order)
+                print(keyRows[start], keyRows, order, end)
                 boundaries.append(end)
                 start = end
             return boundaries
@@ -349,6 +335,7 @@ class GroupedData:
                 boundaries = [block_accessor.num_rows()]
             builder = DelegatingBlockBuilder()
             start = 0
+            print("BOOOOUFIFIFIFF", boundaries)
             for end in boundaries:
                 group_block = block_accessor.slice(start, end)
                 group_block_accessor = BlockAccessor.for_block(group_block)
