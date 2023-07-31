@@ -3375,6 +3375,44 @@ cdef class CoreWorker:
                     placement_group_id))
         return status.ok()
 
+    # def get_named_placement_group(self, const c_string &name,
+    #                                    const c_string &ray_namespace):
+    #    cdef:
+    #        pair[CPlacementGroupID, CRayStatus] named_pg_pair
+    #    with nogil:
+    #        named_pg_pair = (
+    #            CCoreWorkerProcess.GetCoreWorker().GetNamedPlacementGroup(
+    #                name, ray_namespace))
+
+    #   check_status(named_pg_pair.second)
+    #    return PlacementGroupID(named_pg_pair.first.Binary())
+
+    def remove_placement_group_handle_reference(self, PlacementGroupID placement_group_id):
+        cdef:
+            CPlacementGroupID c_placement_group_id = placement_group_id.native()
+        CCoreWorkerProcess.GetCoreWorker().RemovePlacementHandleReference(c_placement_group_id)
+
+    def serialize_placement_group(self, PlacementGroupID placement_group_id):
+        cdef:
+            c_string output
+            CObjectID c_pg_handle_id
+        check_status(CCoreWorkerProcess.GetCoreWorker().SerializePlacementGroup(
+            placement_group_id.native(), &output, &c_pg_handle_id))
+        return output, ObjectRef(c_pg_handle_id.Binary())
+
+    def deserialize_and_register_placement_group(self, const c_string &bytes,
+                                              ObjectRef
+                                              outer_object_ref):
+        cdef:
+            CObjectID c_outer_object_id = (outer_object_ref.native() if
+                                           outer_object_ref else
+                                           CObjectID.Nil())
+        c_placement_group_id = (CCoreWorkerProcess
+                      .GetCoreWorker()
+                      .DeserializeAndRegisterPlacementGroup(
+                          bytes, c_outer_object_id))
+        return PlacementGroupID(c_placement_group_id.Binary())
+
     def submit_actor_task(self,
                           Language language,
                           ActorID actor_id,

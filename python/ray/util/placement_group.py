@@ -1,5 +1,5 @@
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import ray
 from ray._private.auto_init_hook import auto_init_ray
@@ -114,7 +114,63 @@ class PlacementGroup:
 
     def __hash__(self):
         return hash(self.id)
+    
+    """We want to free up the PG resources when all of its handles go out of scope
+    similar to actor handles."""
+    def __del__(self):
+        try:
+            # Mark that this placement group handle has gone out of scope. Once all pg
+            # handles are out of scope, the pg resources will be freed up automatically.
+            if ray._private.worker:
+                worker = ray._private.worker.global_worker
+                if worker.connected and hasattr(worker, "core_worker"):
+                    worker.core_worker.remove_placement_group_handle_reference(self.id)
+        except AttributeError:
+            # Suppress the attribtue error which is caused by
+            # python destruction ordering issue.
+            # It only happen when python exits.
+            pass
 
+    def _serialization_helper(self):
+        worker = ray._private.worker.global_worker
+        worker.check_connected()
+
+        if hasattr(worker, "core_worker"):
+            # Non-local mode
+            state = worker.core_worker.serialize_placement_group(self.id)
+        else:
+            # Local mode
+            state = (
+                {
+                    "placement_group_id": self.id,
+                },
+                None,
+            )
+
+        return state
+    
+    @classmethod
+    def _deserialization_helper(cls, state, outer_object_ref=None):
+        worker = ray._private.worker.global_worker
+        worker.check_connected()
+
+        if hasattr(worker, "core_worker"):
+            # Non-local mode
+            return worker.core_worker.deserialize_and_register_placement_group(
+                state, outer_object_ref
+            )
+        else:
+            # Local mode
+            return cls(
+                # TODO(swang): Accessing the worker's current task ID is not
+                # thread-safe.
+                state["placement_group_id"],
+                worker.current_session_and_job,
+            )
+        
+    def __reduce__(self):
+        (serialized, _) = self._serialization_helper()
+        return PlacementGroup._deserialization_helper, (serialized, None)
 
 @client_mode_wrap
 def _call_placement_group_ready(pg_id: PlacementGroupID, timeout_seconds: int) -> bool:

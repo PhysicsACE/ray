@@ -104,6 +104,11 @@ def _actor_handle_deserializer(serialized_obj):
     outer_id = context.get_outer_object_ref()
     return ray.actor.ActorHandle._deserialization_helper(serialized_obj, outer_id)
 
+def _placement_group_deserializer(serialized_obj):
+    context = ray._private.worker.global_worker.get_serialization_context()
+    outer_id = context.get_outer_object_ref()
+    return ray.util.placement_group.PlacementGroup._deserialization_helper(serialized_obj, outer_id)
+
 
 class SerializationContext:
     """Initialize the serialization library.
@@ -121,9 +126,20 @@ class SerializationContext:
             serialized, actor_handle_id = obj._serialization_helper()
             # Update ref counting for the actor handle
             self.add_contained_object_ref(actor_handle_id)
-            return _actor_handle_deserializer, (serialized,)
+            return _actor_handle_deserializer, (serialized,) 
 
         self._register_cloudpickle_reducer(ray.actor.ActorHandle, actor_handle_reducer)
+        
+        
+        def placement_group_reducer(obj):
+            ray._private.worker.global_worker.check_connected()
+            serialized, pg_handle_id = obj._serialization_helper()
+            # Update ref counting for the actor handle
+            self.add_contained_object_ref(pg_handle_id)
+            return _placement_group_deserializer, (serialized,)
+        
+        self._register_cloudpickle_reducer(ray.util.placement_group.PlacementGroup,
+                                           placement_group_reducer)
 
         def object_ref_reducer(obj):
             worker = ray._private.worker.global_worker
@@ -428,6 +444,11 @@ class SerializationContext:
             contained_object_refs.append(actor_handle_id)
             # Update ref counting for the actor handle
             metadata = ray_constants.OBJECT_METADATA_TYPE_ACTOR_HANDLE
+            value = serialized
+        elif isinstance(value, ray.util.placement_group.PlacementGroup):
+            serialized, pg_handle_id = value._serialization_helper()
+            contained_object_refs.append(pg_handle_id)
+            metadata = ray_constants.OBJECT_METADATA_TYPE_PG_HANDLE
             value = serialized
         else:
             metadata = ray_constants.OBJECT_METADATA_TYPE_CROSS_LANGUAGE

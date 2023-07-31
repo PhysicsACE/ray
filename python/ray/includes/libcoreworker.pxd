@@ -120,6 +120,8 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
             const CPlacementGroupID &placement_group_id)
         CRayStatus WaitPlacementGroupReady(
             const CPlacementGroupID &placement_group_id, int64_t timeout_seconds)
+        pair[CPlacementGroupID, CRayStatus] GetNamedPlacementGroup(
+            const c_string &name, const c_string &ray_namespace)
         CRayStatus SubmitActorTask(
             const CActorID &actor_id, const CRayFunction &function,
             const c_vector[unique_ptr[CTaskArg]] &args,
@@ -176,6 +178,7 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
         CTaskID GetCallerId()
         const ResourceMappingType &GetResourceIDs() const
         void RemoveActorHandleReference(const CActorID &actor_id)
+        void RemovePlacementHandleReference(const CPlacementGroupID &placement_group_id)
         CActorID DeserializeAndRegisterActorHandle(const c_string &bytes, const
                                                    CObjectID &outer_object_id)
         CRayStatus SerializeActorHandle(const CActorID &actor_id, c_string
