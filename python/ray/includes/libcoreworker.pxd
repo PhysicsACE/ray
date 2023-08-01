@@ -189,6 +189,11 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
             const c_string &name, const c_string &ray_namespace)
         pair[c_vector[c_pair[c_string, c_string]], CRayStatus] ListNamedActors(
             c_bool all_namespaces)
+        CRayStatus SerializePlacementGroup(const CPlacementGroupID &placement_group_id,
+                                           c_string *output,
+                                           CObjectID *placement_handle_id)
+        CPlacementGroupID DeserializeAndRegisterPlacementGroup(const c_string &serialized,
+                                                               const CObjectID &outer_object_id)
         void AddLocalReference(const CObjectID &object_id)
         void RemoveLocalReference(const CObjectID &object_id)
         void PutObjectIntoPlasma(const CRayObject &object,

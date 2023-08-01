@@ -882,6 +882,17 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   Status WaitPlacementGroupReady(const PlacementGroupID &placement_group_id,
                                  int64_t timeout_seconds);
 
+  /// Fetch the placement group by name and return its corresponding status.
+  /// Internally, a local reference will be added to support reference counting
+  /// for the underlying placement group.
+  /// \param name The name of the requested placement group
+  /// \param ray_namespace The namespace that the name belongs to 
+  /// \return The id of the placement group and Status OK if the named placement group 
+  /// is fetched. TimedOut if request to GCS server times out. NotFound if placement 
+  ///group is already removed or doesn't exist or is not in the specified namespace. 
+  std::pair<PlacementGroupID, Status> GetNamedPlacementGroup(const std::string &name, 
+                                                             const std::string &ray_namespace);
+
   /// Remove a local reference to the placement group handle. This should be 
   /// triggered by the frontend language when the handles goes out of scope or
   /// if the variable was manually deleted by the client.
@@ -930,11 +941,21 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   /// \param[out] std::function<void(std::unique_ptr<PlacementGroupID> &)> The callback to be used when the PG goes out of scope
   void OutOfScopePGCallback(const PlacementGroupID &placement_group_id);
   /// Serialize the PlacementGroup for pickling 
-  Status SerializePlacementGroup(const PlacementGroupID &actor_id,
+  /// \param[in] placement_group_id The ID of the actor handle to serialize.
+  /// \param[out] The serialized handle.
+  /// \param[out] The ID used to track references to the actor handle. If the
+  /// serialized actor handle in the language frontend is stored inside an
+  /// object, then this must be recorded in the worker's ReferenceCounter.
+  /// \return Status::Invalid if we don't have the specified handle.
+  Status SerializePlacementGroup(const PlacementGroupID &placement_group_id,
                               std::string *output,
-                              ObjectID *actor_handle_id) const;
+                              ObjectID *placement_handle_id) const;
   /// Deserialize and register the respective placement group for reference
   /// counting
+  /// \param[in] serialized The serialized placement group handle.
+  /// \param[in] outer_object_id The object ID that contained the serialized
+  /// placement group handle, if any.
+  /// \return The PlacementGroupID of the deserialized handle.
   PlacementGroupID DeserializeAndRegisterPlacementGroup(const std::string &serialized,
                                   const ObjectID &outer_object_id);
 

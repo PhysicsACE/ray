@@ -2196,6 +2196,14 @@ Status CoreWorker::WaitPlacementGroupReady(const PlacementGroupID &placement_gro
   }
 }
 
+std::pair<PlacementGroupID, Status> GetNamedPlacementGroup(const std::string &name, 
+                                                           const std::string &ray_namespace) {
+
+  RAY_CHECK(!name.empty());
+  
+  return std::make_pair(PlacementGroupID::Nil(), Status::OK());
+}
+
 void CoreWorker::RemovePlacementHandleReference(const PlacementGroupID &placement_id) {
   ObjectID pg_handle_id = placement_id.GeneratePlacementHandle();
   reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
@@ -2257,7 +2265,7 @@ Status CoreWorker::SerializePlacementGroup(const PlacementGroupID &placement_gro
                               std::string *output,
                               ObjectID *placement_handle_id) const {
   rpc::PlacementGroupHandle inner;
-  inner.set_placement_group_id(placement_group_id.Data());
+  inner.set_placement_group_id(placement_group_id.Data(), placement_group_id.Size());
   inner.SerializeToString(output);
   *placement_handle_id = placement_group_id.GeneratePlacementHandle();
   return Status::OK();
