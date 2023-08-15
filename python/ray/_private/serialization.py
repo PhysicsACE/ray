@@ -104,6 +104,9 @@ def _actor_handle_deserializer(serialized_obj):
     outer_id = context.get_outer_object_ref()
     return ray.actor.ActorHandle._deserialization_helper(serialized_obj, outer_id)
 
+def _actor_class_deserializer(serialized):
+    return ray.actor.ActorClass._deserialization_helper(serialized)
+
 
 class SerializationContext:
     """Initialize the serialization library.
@@ -140,6 +143,14 @@ class SerializationContext:
             )
 
         self._register_cloudpickle_reducer(ray.ObjectRef, object_ref_reducer)
+
+        def actor_class_reducer(obj):
+            worker = ray._private.worker.global_worker
+            worker.check_connected()
+            serialized = obj._serialization_helper()
+            return _actor_class_deserializer, (serialized,)
+        
+        self._register_cloudpickle_reducer(ray.actor.ActorClass, actor_class_reducer)
 
         def object_ref_generator_reducer(obj):
             return ObjectRefGenerator, (obj._refs,)
@@ -274,6 +285,9 @@ class SerializationContext:
             elif metadata_fields[0] == ray_constants.OBJECT_METADATA_TYPE_ACTOR_HANDLE:
                 obj = self._deserialize_msgpack_data(data, metadata_fields)
                 return _actor_handle_deserializer(obj)
+            elif metadata_fields[0] == ray_constants.OBJECT_METADATA_TYPE_ACTOR_CLASS:
+                serialized = self._deserialize_msgpack_data(data, metadata_fields)
+                return _actor_class_deserializer(serialized)
             # Otherwise, return an exception object based on
             # the error type.
             try:
@@ -428,6 +442,10 @@ class SerializationContext:
             contained_object_refs.append(actor_handle_id)
             # Update ref counting for the actor handle
             metadata = ray_constants.OBJECT_METADATA_TYPE_ACTOR_HANDLE
+            value = serialized
+        elif isinstance(value, ray.actor.ActorClass):
+            serialized = value._serialization_helper()
+            metadata = ray_constants.OBJECT_METADATA_TYPE_ACTOR_CLASS
             value = serialized
         else:
             metadata = ray_constants.OBJECT_METADATA_TYPE_CROSS_LANGUAGE

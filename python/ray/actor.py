@@ -1,6 +1,7 @@
 import inspect
 import logging
 import weakref
+import json
 from typing import Any, Dict, List, Optional
 
 import ray._private.ray_constants as ray_constants
@@ -170,6 +171,7 @@ class ActorMethod:
         if num_returns is None:
             num_returns = self._num_returns
 
+
         def invocation(args, kwargs):
             actor = self._actor_hard_ref or self._actor_ref()
             if actor is None:
@@ -255,6 +257,7 @@ class _ActorClassMethodMetadata(object):
         self.signatures = {}
         self.num_returns = {}
         self.concurrency_group_for_methods = {}
+        self.class_methods = set()
 
         for method_name, method in actor_methods:
             # Whether or not this method requires binding of its first
@@ -264,6 +267,9 @@ class _ActorClassMethodMetadata(object):
             is_bound = is_class_method(method) or is_static_method(
                 modified_class, method_name
             )
+
+            if is_class_method(method):
+                self.class_methods.add(method_name)
 
             # Print a warning message if the method signature is not
             # supported. We don't raise an exception because if the actor
@@ -487,6 +493,8 @@ class ActorClass:
             modified_class.__ray_actor_class__
         )
 
+        self.__name__ = modified_class.__name__
+
         self.__ray_metadata__ = _ActorClassMetadata(
             Language.PYTHON,
             modified_class,
@@ -497,6 +505,34 @@ class ActorClass:
         self._default_options = actor_options
         if "runtime_env" in self._default_options:
             self._default_options["runtime_env"] = self.__ray_metadata__.runtime_env
+
+        """
+        To support class methods, we keep track of the class methods available to
+        this class for its own methods and class methods that it inherits from its 
+        parent class upon declaration. However, we lazily load these methods to 
+        the function manager upon invocation to ensure that the worker is connected. 
+        """
+
+        self._ray_function_descriptor = {}
+        methods = self.__ray_metadata__.method_meta.methods
+        module_name = actor_creation_function_descriptor.module_name
+        class_name = actor_creation_function_descriptor.class_name
+        self.classmethods = {}
+        for method_name, method_descriptor  in methods.items():
+            if method_name in self.__ray_metadata__.method_meta.class_methods:
+                function_descriptor = PythonFunctionDescriptor(
+                        module_name, method_name, class_name
+                )
+                self._ray_function_descriptor[method_name] = function_descriptor
+                method = ActorMethod(
+                    self,
+                    method_name,
+                    self.__ray_metadata__.method_meta.num_returns[method_name],
+                    decorator=self.__ray_metadata__.method_meta.decorators.get(method_name),
+                )
+                self.classmethods[method_name] = (function_descriptor.function_id,
+                                             method_descriptor.__func__)
+                setattr(self, method_name, method)
 
         return self
 
@@ -1006,6 +1042,109 @@ class ActorClass:
         )
 
         return actor_handle
+    
+    def _actor_method_call(
+        self,
+        method_name: str,
+        args: List[Any] = None,
+        kwargs: Dict[str, Any] = None,
+        name: str = "",
+        num_returns: Optional[int] = None,
+        concurrency_group_name: Optional[str] = None,
+    ):
+        """Method execution stub for an actor handle.
+
+        This is the function that executes when
+        `ActorClass.method_name.remote(*args, **kwargs)` is called. Instead of
+        executing locally, the method is packaged as a task and scheduled
+        to the remote actor instance.
+
+        Args:
+            method_name: The name of the actor method to execute.
+            args: A list of arguments for the actor method.
+            kwargs: A dictionary of keyword arguments for the actor method.
+            name: The name to give the actor method call task.
+            num_returns: The number of return values for the method.
+
+        Returns:
+            object_refs: A list of object refs returned by the remote actor
+                method.
+        """
+        worker = ray._private.worker.global_worker
+
+        args = args or []
+        kwargs = kwargs or {}
+
+
+        function_signature = self.__ray_metadata__.method_meta.signatures[method_name]
+
+
+        if not args and not kwargs and not function_signature:
+            list_args = []
+        else:
+            list_args = signature.flatten_args(function_signature, args, kwargs)
+        
+        print("BEFOOOORRRREEEE", dir(self))
+        list_args.insert(0, self)
+        list_args.insert(0, b"__RAY_DUMMY__")
+
+
+        function_descriptor = self._ray_function_descriptor[method_name]
+
+        id, method = self.classmethods[method_name]
+        meta = self.__ray_metadata__
+        
+        worker.function_actor_manager.preload_class_methods((method_name, id, method),
+                                                            function_descriptor)
+        
+        print("FIIIIRRRSSSTTT", worker.current_job_id)
+        
+        worker.function_actor_manager.export_actor_class(
+                meta.modified_class,
+                meta.actor_creation_function_descriptor,
+                meta.method_meta.methods.keys(),
+            )
+        
+
+        # if worker.mode == ray.LOCAL_MODE:
+        #     assert (
+        #         not self._ray_is_cross_language
+        #     ), "Cross language remote actor method cannot be executed locally."
+
+        if num_returns == "dynamic":
+            num_returns = -1
+        elif num_returns == "streaming":
+            # TODO(sang): This is a temporary private API.
+            # Remove it when we migrate to the streaming generator.
+            num_returns = ray._raylet.STREAMING_GENERATOR_RETURN
+
+        object_refs = worker.core_worker.submit_task(
+            self.__ray_metadata__.language,
+            function_descriptor,
+            list_args,
+            name,
+            num_returns,
+            {"CPU": 1},
+            1,
+            False,
+            None,
+            "DEFAULT",
+            worker.debugger_breakpoint,
+            "{}",
+        )
+
+        if num_returns == STREAMING_GENERATOR_RETURN:
+            # Streaming generator will return a single ref
+            # that is for the generator task.
+            assert len(object_refs) == 1
+            generator_ref = object_refs[0]
+            return StreamingObjectRefGenerator(generator_ref, worker)
+        if len(object_refs) == 1:
+            object_refs = object_refs[0]
+        elif len(object_refs) == 0:
+            object_refs = None
+
+        return object_refs
 
     @DeveloperAPI
     def bind(self, *args, **kwargs):
@@ -1018,6 +1157,129 @@ class ActorClass:
         return ClassNode(
             self.__ray_metadata__.modified_class, args, kwargs, self._default_options
         )
+    
+    # def __getattr__(self, item):
+    #     if not self._ray_is_cross_language:
+    #         raise AttributeError(
+    #             f"'{type(self).__name__}' object has " f"no attribute '{item}'"
+    #         )
+    #     if item in ["__ray_terminate__"]:
+
+    #         class FakeActorMethod(object):
+    #             def __call__(self, *args, **kwargs):
+    #                 raise TypeError(
+    #                     "Actor methods cannot be called directly. Instead "
+    #                     "of running 'object.{}()', try 'object.{}.remote()'.".format(
+    #                         item, item
+    #                     )
+    #                 )
+
+    #             def remote(self, *args, **kwargs):
+    #                 logger.warning(
+    #                     f"Actor method {item} is not supported by cross language."
+    #                 )
+
+    #         return FakeActorMethod()
+
+    #     return ActorMethod(
+    #         self,
+    #         item,
+    #         ray_constants.
+    #         # Currently, we use default num returns
+    #         DEFAULT_ACTOR_METHOD_NUM_RETURN_VALS,
+    #         # Currently, cross-lang actor method not support decorator
+    #         decorator=None,
+    #     )
+    
+    def _serialization_helper(self):
+        """This is defined in order to make pickling work.
+
+        Returns:
+            A dictionary of the information needed to reconstruct the object.
+        """
+        worker = ray._private.worker.global_worker
+        worker.check_connected()
+
+        if hasattr(worker, "core_worker"):
+
+            """
+            In non-local mode, we need to ensure that the ActorClass is 
+            stored in gcs to be able to be used inside the classmethod 
+            to spawn new actors and access class attributes.
+            """
+
+            meta = self.__ray_metadata__
+            key = worker.function_actor_manager.get_actor_class_key(
+                worker.current_job_id,
+                meta.actor_creation_function_descriptor,
+            )
+
+            print("SEEECCCCOOONNDDD", worker.current_job_id)
+
+            # return json.dumps(data)
+            return key
+        else:
+            # Local mode
+            state = (
+                {
+                    "actor_language": self._ray_actor_language,
+                    "actor_id": self._ray_actor_id,
+                    "method_decorators": self._ray_method_decorators,
+                    "method_signatures": self._ray_method_signatures,
+                    "method_num_returns": self._ray_method_num_returns,
+                    "actor_method_cpus": self._ray_actor_method_cpus,
+                    "actor_creation_function_descriptor": self._ray_actor_creation_function_descriptor,  # noqa: E501
+                },
+                None,
+            )
+
+        return state
+
+    @classmethod
+    def _deserialization_helper(cls, serialized):
+        """This is defined in order to make pickling work.
+
+        Args:
+            state: The serialized state of the actor handle.
+            outer_object_ref: The ObjectRef that the serialized actor handle
+                was contained in, if any. This is used for counting references
+                to the actor handle.
+
+        """
+        worker = ray._private.worker.global_worker
+        worker.check_connected()
+
+
+        if hasattr(worker, "core_worker"):
+            # Non-local mode
+            # data = json.loads(serialized)
+            # job_id = ray._raylet.JobID.from_int(data["job_id"])
+            # function_id = data["function_id"].encode()
+
+            # actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(job_id, function_id)
+            actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(serialized)
+            return ActorClass._ray_from_modified_class(actor_class, ActorClassID.from_random(), {})
+        # else:
+        #     # Local mode
+        #     return cls(
+        #         # TODO(swang): Accessing the worker's current task ID is not
+        #         # thread-safe.
+        #         state["actor_language"],
+        #         state["actor_id"],
+        #         state["method_decorators"],
+        #         state["method_signatures"],
+        #         state["method_num_returns"],
+        #         state["actor_method_cpus"],
+        #         state["actor_creation_function_descriptor"],
+        #         worker.current_session_and_job,
+        #     )
+
+    def __reduce__(self):
+        """This code path is used by pickling but not by Ray forking."""
+        serialized = self._serialization_helper()
+        # There is no outer object ref when the actor handle is
+        # deserialized out-of-band using pickle.
+        return ActorClass._deserialization_helper, (serialized,)
 
 
 @PublicAPI

@@ -316,6 +316,8 @@ OBJECT_METADATA_TYPE_RAW = b"RAW"
 # of XLANG.
 OBJECT_METADATA_TYPE_ACTOR_HANDLE = b"ACTOR_HANDLE"
 
+OBJECT_METADATA_TYPE_ACTOR_CLASS = b"ACTOR_CLASS"
+
 # A constant indicating the debugging part of the metadata (see above).
 OBJECT_METADATA_DEBUG_PREFIX = b"DEBUG:"
 

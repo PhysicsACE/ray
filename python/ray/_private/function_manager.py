@@ -9,7 +9,7 @@ import threading
 import time
 import traceback
 from collections import defaultdict, namedtuple
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 
 import ray
 import ray._private.profiling as profiling
@@ -39,6 +39,11 @@ FunctionExecutionInfo = namedtuple(
 ImportedFunctionInfo = namedtuple(
     "ImportedFunctionInfo",
     ["job_id", "function_id", "function_name", "function", "module", "max_calls"],
+)
+
+ImportedMethodInfo = namedtuple(
+    "ImportedMethodInfo",
+    ["job_id", "method_name", "function_id", "module", "method"]
 )
 
 """FunctionExecutionInfo: A named tuple storing remote function information."""
@@ -112,6 +117,15 @@ class FunctionActorManager:
     def get_task_counter(self, function_descriptor):
         function_id = function_descriptor.function_id
         return self._num_task_executions[function_id]
+    
+    def get_actor_class_key(self, job_id, actor_creation_function_descriptor):
+        key = make_function_table_key(
+            b"ActorClass",
+            job_id,
+            actor_creation_function_descriptor.function_id.binary(),
+        )
+
+        return key
 
     def compute_collision_identifier(self, function_or_class):
         """The identifier is used to detect excessive duplicate exports.
@@ -276,7 +290,7 @@ class FunctionActorManager:
 
     def fetch_registered_method(
         self, key: str, timeout: Optional[int] = None
-    ) -> Optional[ImportedFunctionInfo]:
+    ) -> Optional[Union[ImportedFunctionInfo, ImportedMethodInfo]]:
         vals = self._worker.gcs_client.internal_kv_get(
             key, KV_NAMESPACE_FUNCTION_TABLE, timeout=timeout
         )
@@ -284,6 +298,16 @@ class FunctionActorManager:
             return None
         else:
             vals = pickle.loads(vals)
+            if "method_name" in vals:
+                fields = [
+                    "job_id",
+                    "method_name",
+                    "function_id",
+                    "module",
+                    "method",
+                ]
+                return ImportedMethodInfo._make(vals.get(field) for field in fields)
+            
             fields = [
                 "job_id",
                 "function_id",
@@ -293,12 +317,88 @@ class FunctionActorManager:
                 "max_calls",
             ]
             return ImportedFunctionInfo._make(vals.get(field) for field in fields)
+        
+    def register_class_method(self, remote_class_method):
+        
+        (
+            job_id_str,
+            method_name,
+            function_id_str,
+            module,
+            method,
+        ) = remote_class_method
+
+        function_id = ray.FunctionID(function_id_str)
+        job_id = ray.JobID(job_id_str)
+
+        # This function is called by ImportThread. This operation needs to be
+        # atomic. Otherwise, there is race condition. Another thread may use
+        # the temporary function above before the real function is ready.
+        with self.lock:
+            self._num_task_executions[function_id] = 0
+
+            try:
+                function = pickle.loads(method)
+            except Exception:
+
+                # If an exception was thrown when the remote function was
+                # imported, we record the traceback and notify the scheduler
+                # of the failure.
+                traceback_str = format_error_message(traceback.format_exc())
+
+                def f(*args, **kwargs):
+                    raise RuntimeError(
+                        "The remote function failed to import on the "
+                        "worker. This may be because needed library "
+                        "dependencies are not installed in the worker "
+                        "environment:\n\n{}".format(traceback_str)
+                    )
+
+                # Use a placeholder method when function pickled failed
+                self._function_execution_info[function_id] = FunctionExecutionInfo(
+                    function=f, function_name=method_name, max_calls=1
+                )
+
+                # Log the error message. Log at DEBUG level to avoid overly
+                # spamming the log on import failure. The user gets the error
+                # via the RuntimeError message above.
+                logger.debug(
+                    "Failed to unpickle the remote function "
+                    f"'{method_name}' with "
+                    f"function ID {function_id.hex()}. "
+                    f"Job ID:{job_id}."
+                    f"Traceback:\n{traceback_str}. "
+                )
+            else:
+                # The below line is necessary. Because in the driver process,
+                # if the function is defined in the file where the python
+                # script was started from, its module is `__main__`.
+                # However in the worker process, the `__main__` module is a
+                # different module, which is `default_worker.py`
+                # function.__module__ = module
+                executor = self._make_actor_method_executor(
+                    method_name,
+                    function,
+                    True,
+                    False,
+                )
+                self._function_execution_info[function_id] = FunctionExecutionInfo(
+                    function=executor,
+                    function_name=method_name,
+                    max_calls=0,
+                )
+        return True
 
     def fetch_and_register_remote_function(self, key):
         """Import a remote function."""
+
         remote_function_info = self.fetch_registered_method(key)
         if not remote_function_info:
             return False
+        
+        if isinstance(remote_function_info, ImportedMethodInfo):
+            return self.register_class_method(remote_function_info)
+        
         (
             job_id_str,
             function_id_str,
@@ -447,11 +547,18 @@ class FunctionActorManager:
                     if function_descriptor.function_id in self._function_execution_info:
                         break
                     else:
-                        key = make_function_table_key(
-                            b"RemoteFunction",
-                            job_id,
-                            function_descriptor.function_id.binary(),
-                        )
+                        if function_descriptor.is_actor_method():
+                                key = make_function_table_key(
+                                b"ActorClassMethod",
+                                job_id,
+                                function_descriptor.function_id.binary(),
+                            )
+                        else:
+                            key = make_function_table_key(
+                                b"RemoteFunction",
+                                job_id,
+                                function_descriptor.function_id.binary(),
+                            )
                         if self.fetch_and_register_remote_function(key) is True:
                             break
                 else:
@@ -483,7 +590,7 @@ class FunctionActorManager:
             time.sleep(0.001)
 
     def export_actor_class(
-        self, Class, actor_creation_function_descriptor, actor_method_names
+        self, Class, actor_creation_function_descriptor, actor_method_names, key_callback = None
     ):
         if self._worker.load_code_from_local:
             module_name, class_name = (
@@ -538,6 +645,10 @@ class FunctionActorManager:
         self._worker.gcs_client.internal_kv_put(
             key, pickle.dumps(actor_class_info), True, KV_NAMESPACE_FUNCTION_TABLE
         )
+
+        if key_callback is not None:
+            key_callback(key)
+
         # TODO(rkn): Currently we allow actor classes to be defined
         # within tasks. I tried to disable this, but it may be necessary
         # because of https://github.com/ray-project/ray/issues/1146.
@@ -610,6 +721,65 @@ class FunctionActorManager:
                 self._num_task_executions[method_id] = 0
             self._num_task_executions[function_id] = 0
         return actor_class
+    
+    def preload_class_methods(self, class_method, function_descriptor):
+
+        """
+        Pickle and export the supplied class method to redis 
+
+        Args:
+            class_method: A tuple of the name, id and executable representing
+                          the class method to export
+            actor_creation_function_descriptor: Function descriptor of
+                the actor constructor.
+        """
+
+        name, id, method = class_method
+
+        if self._worker.load_code_from_local:
+            module_name, method_name = (
+                function_descriptor.module_name,
+                name,
+            )
+            # If the class is dynamic, we still export it to GCS
+            # even if load_code_from_local is set True.
+            if (
+                self.load_function_or_class_from_local(module_name, method_name)
+                is not None
+            ):
+                return
+        
+        serialized_class_method = pickle_dumps(
+            method,
+            f"Could not serialize the ActorClass method "
+            f"{name}",
+        )
+
+        check_oversized_function(
+            serialized_class_method,
+            name,
+            "actor classmethod",
+            self._worker,
+        )
+
+        key = make_function_table_key(
+            b"ActorClassMethod",
+            self._worker.current_job_id,
+            function_descriptor.function_id.binary(),
+        )
+
+        method_info = {
+            "job_id": self._worker.current_job_id.binary(),
+            "method_name": name,
+            "function_id": function_descriptor.function_id.binary(),
+            "module": function_descriptor.module_name,
+            "method": serialized_class_method,
+            "collision_identifier": self.compute_collision_identifier(method),
+        }
+
+        self._worker.gcs_client.internal_kv_put(
+            key, pickle.dumps(method_info), True, KV_NAMESPACE_FUNCTION_TABLE
+        )
 
     def _load_actor_class_from_local(self, actor_creation_function_descriptor):
         """Load actor class from local code."""
@@ -675,8 +845,60 @@ class FunctionActorManager:
         try:
             with self.lock:
                 actor_class = pickle.loads(pickled_class)
-        except Exception:
+        except Exception as e:
             logger.debug("Failed to load actor class %s.", class_name)
+            # If an exception was thrown when the actor was imported, we record
+            # the traceback and notify the scheduler of the failure.
+            traceback_str = format_error_message(traceback.format_exc())
+            # The actor class failed to be unpickled, create a fake actor
+            # class instead (just to produce error messages and to prevent
+            # the driver from hanging).
+            print("Pickle error", e)
+            actor_class = self._create_fake_actor_class(
+                class_name, actor_method_names, traceback_str
+            )
+
+        # The below line is necessary. Because in the driver process,
+        # if the function is defined in the file where the python script
+        # was started from, its module is `__main__`.
+        # However in the worker process, the `__main__` module is a
+        # different module, which is `default_worker.py`
+        actor_class.__module__ = module_name
+        return actor_class
+    
+    # job_id, function_id
+    def _deserialize_actor_class_from_gcs(self, key):
+        """Load actor class from GCS."""
+        # key = make_function_table_key(
+        #     b"ActorClass",
+        #     job_id,
+        #     function_id,
+        # )
+
+        # Fetch raw data from GCS.
+        vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
+        fields = ["job_id", "class_name", "module", "class", "actor_method_names"]
+        if vals is None:
+            vals = {}
+        else:
+            vals = pickle.loads(vals)
+        (job_id_str, class_name, module, pickled_class, actor_method_names) = (
+            vals.get(field) for field in fields
+        )
+
+        # class_name = ensure_str(class_name)
+        module_name = ensure_str(module)
+        job_id = ray.JobID(job_id_str)
+        actor_method_names = json.loads(ensure_str(actor_method_names))
+
+        actor_class = None
+        try:
+            with self.lock:
+                actor_class = pickle.loads(pickled_class)
+        except Exception as e:
+            logger.debug("Failed to load actor class %s.", class_name)
+
+            print(e)
             # If an exception was thrown when the actor was imported, we record
             # the traceback and notify the scheduler of the failure.
             traceback_str = format_error_message(traceback.format_exc())
@@ -696,7 +918,7 @@ class FunctionActorManager:
         return actor_class
 
     def _make_actor_method_executor(
-        self, method_name: str, method, actor_imported: bool
+        self, method_name: str, method, actor_imported: bool = False, need_actor: bool = True
     ):
         """Make an executor that wraps a user-defined actor method.
         The wrapped method updates the worker's internal state and performs any
@@ -714,6 +936,16 @@ class FunctionActorManager:
                 stored instance of the actor. The function also updates the
                 worker's internal state to record the executed method.
         """
+
+        if not need_actor:
+
+            def actor_method_executor(*args, **kwargs):
+                return method(*args, **kwargs)
+            
+            actor_method_executor.name = method_name
+            actor_method_executor.method = method
+
+            return actor_method_executor
 
         def actor_method_executor(__ray_actor, *args, **kwargs):
             # Execute the assigned method.
