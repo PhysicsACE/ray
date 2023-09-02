@@ -1,7 +1,8 @@
 import inspect
 import logging
+import os
 import weakref
-import json
+import threading
 from typing import Any, Dict, List, Optional
 
 import ray._private.ray_constants as ray_constants
@@ -160,16 +161,17 @@ class ActorMethod:
 
         class FuncWrapper:
             def remote(self, *args, **kwargs):
-                return func_cls._remote(args=args, kwargs=kwargs, **options)
+                return func_cls._remote(args=args, kwargs=kwargs, options=options)
 
         return FuncWrapper()
 
     @_tracing_actor_method_invocation
     def _remote(
-        self, args=None, kwargs=None, name="", num_returns=None, concurrency_group=None
+        # self, args=None, kwargs=None, name="", num_returns=None, concurrency_group=None
+        self, args=None, kwargs=None, options={}
     ):
-        if num_returns is None:
-            num_returns = self._num_returns
+        if "num_returns" not in options:
+            options["num_returns"] = self._num_returns
 
 
         def invocation(args, kwargs):
@@ -180,9 +182,7 @@ class ActorMethod:
                 self._method_name,
                 args=args,
                 kwargs=kwargs,
-                name=name,
-                num_returns=num_returns,
-                concurrency_group_name=concurrency_group,
+                options=options,
             )
 
         # Apply the decorator if there is one.
@@ -258,6 +258,7 @@ class _ActorClassMethodMetadata(object):
         self.num_returns = {}
         self.concurrency_group_for_methods = {}
         self.class_methods = set()
+        self.class_attributes = set()
 
         for method_name, method in actor_methods:
             # Whether or not this method requires binding of its first
@@ -293,6 +294,12 @@ class _ActorClassMethodMetadata(object):
                 self.concurrency_group_for_methods[
                     method_name
                 ] = method.__ray_concurrency_group__
+
+        for k in modified_class.__ray_actor_class__.__dict__.keys():
+            if k[:2] != "__":
+                value = getattr(modified_class.__ray_actor_class__, k)
+                if not callable(value):
+                    self.class_attributes.add(k)
 
         # Update cache.
         cls._cache[actor_creation_function_descriptor] = self
@@ -365,6 +372,7 @@ class _ActorClassMetadata:
         self.concurrency_groups = concurrency_groups
         self.scheduling_strategy = scheduling_strategy
         self.last_export_session_and_job = None
+        self.class_updated = False
         self.method_meta = _ActorClassMethodMetadata.create(
             modified_class, actor_creation_function_descriptor
         )
@@ -518,7 +526,7 @@ class ActorClass:
         module_name = actor_creation_function_descriptor.module_name
         class_name = actor_creation_function_descriptor.class_name
         self.classmethods = {}
-        for method_name, method_descriptor  in methods.items():
+        for method_name, method_descriptor in methods.items():
             if method_name in self.__ray_metadata__.method_meta.class_methods:
                 function_descriptor = PythonFunctionDescriptor(
                         module_name, method_name, class_name
@@ -871,12 +879,13 @@ class ActorClass:
 
         # Export the actor.
         if not meta.is_cross_language and (
-            meta.last_export_session_and_job != worker.current_session_and_job
+            meta.last_export_session_and_job != worker.current_session_and_job or meta.class_updated
         ):
             # If this actor class was not exported in this session and job,
             # we need to export this function again, because current GCS
             # doesn't have it.
             meta.last_export_session_and_job = worker.current_session_and_job
+            meta.class_updated = False
             # After serialize / deserialize modified class, the __module__
             # of modified class will be ray.cloudpickle.cloudpickle.
             # So, here pass actor_creation_function_descriptor to make
@@ -885,6 +894,7 @@ class ActorClass:
                 meta.modified_class,
                 meta.actor_creation_function_descriptor,
                 meta.method_meta.methods.keys(),
+                meta.modified_class.__ray_actor_class__,
             )
 
         resources = ray._private.utils.resources_from_ray_options(actor_options)
@@ -1039,6 +1049,7 @@ class ActorClass:
             meta.actor_creation_function_descriptor,
             worker.current_session_and_job,
             original_handle=True,
+            actor_class=self,
         )
 
         return actor_handle
@@ -1048,9 +1059,10 @@ class ActorClass:
         method_name: str,
         args: List[Any] = None,
         kwargs: Dict[str, Any] = None,
-        name: str = "",
-        num_returns: Optional[int] = None,
-        concurrency_group_name: Optional[str] = None,
+        # name: str = "",
+        # num_returns: Optional[int] = None,
+        # concurrency_group_name: Optional[str] = None,
+        options: Dict[str, Any] = {},
     ):
         """Method execution stub for an actor handle.
 
@@ -1075,6 +1087,97 @@ class ActorClass:
         args = args or []
         kwargs = kwargs or {}
 
+        default_options = self._default_options.copy()
+        updated_options = ray_option_utils.update_options(default_options, options)
+        ray_option_utils.validate_task_options(updated_options, in_options=True)
+
+        for k, v in ray_option_utils.task_options.items():
+            if k == "max_retries":
+                # TODO(swang): We need to override max_retries here because the default
+                # value gets set at Ray import time. Ideally, we should allow setting
+                # default values from env vars for other options too.
+                v.default_value = os.environ.get(
+                    "RAY_TASK_MAX_RETRIES", v.default_value
+                )
+                v.default_value = int(v.default_value)
+            options[k] = options.get(k, v.default_value)
+        # "max_calls" already takes effects and should not apply again.
+        # Remove the default value here.
+        options.pop("max_calls", None)
+
+        name = options["name"]
+        runtime_env = parse_runtime_env(options["runtime_env"])
+        placement_group = options["placement_group"]
+        placement_group_bundle_index = options["placement_group_bundle_index"]
+        placement_group_capture_child_tasks = options[
+            "placement_group_capture_child_tasks"
+        ]
+        scheduling_strategy = options["scheduling_strategy"]
+        num_returns = options["num_returns"]
+        if num_returns == "dynamic":
+            num_returns = -1
+        elif num_returns == "streaming":
+            # TODO(sang): This is a temporary private API.
+            # Remove it when we migrate to the streaming generator.
+            num_returns = ray._raylet.STREAMING_GENERATOR_RETURN
+
+        max_retries = options["max_retries"]
+        retry_exceptions = options["retry_exceptions"]
+        if isinstance(retry_exceptions, (list, tuple)):
+            retry_exception_allowlist = tuple(retry_exceptions)
+            retry_exceptions = True
+        else:
+            retry_exception_allowlist = None
+
+        if scheduling_strategy is None or not isinstance(
+            scheduling_strategy, PlacementGroupSchedulingStrategy
+        ):
+            _warn_if_using_deprecated_placement_group(options, 4)
+
+        resources = ray._private.utils.resources_from_ray_options(options)
+
+        if scheduling_strategy is None or isinstance(
+            scheduling_strategy, PlacementGroupSchedulingStrategy
+        ):
+            if isinstance(scheduling_strategy, PlacementGroupSchedulingStrategy):
+                placement_group = scheduling_strategy.placement_group
+                placement_group_bundle_index = (
+                    scheduling_strategy.placement_group_bundle_index
+                )
+                placement_group_capture_child_tasks = (
+                    scheduling_strategy.placement_group_capture_child_tasks
+                )
+
+            if placement_group_capture_child_tasks is None:
+                placement_group_capture_child_tasks = (
+                    worker.should_capture_child_tasks_in_placement_group
+                )
+            placement_group = _configure_placement_group_based_on_context(
+                placement_group_capture_child_tasks,
+                placement_group_bundle_index,
+                resources,
+                {},  # no placement_resources for tasks
+                method_name,
+                placement_group=placement_group,
+            )
+
+            if not placement_group.is_empty:
+                scheduling_strategy = PlacementGroupSchedulingStrategy(
+                    placement_group,
+                    placement_group_bundle_index,
+                    placement_group_capture_child_tasks,
+                )
+            else:
+                scheduling_strategy = "DEFAULT"
+
+        serialized_runtime_env_info = None
+        if runtime_env is not None:
+            serialized_runtime_env_info = get_runtime_env_info(
+                runtime_env,
+                is_job_runtime_env=False,
+                serialize=True,
+            )
+
 
         function_signature = self.__ray_metadata__.method_meta.signatures[method_name]
 
@@ -1084,12 +1187,15 @@ class ActorClass:
         else:
             list_args = signature.flatten_args(function_signature, args, kwargs)
         
-        print("BEFOOOORRRREEEE", dir(self))
         list_args.insert(0, self)
         list_args.insert(0, b"__RAY_DUMMY__")
 
 
         function_descriptor = self._ray_function_descriptor[method_name]
+
+        # print("DICCCTTTTTT", self.__dict__)
+        # print("SECCCCONNNDDD", self.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
+        # print("CLADD ATTRIBUTES", self.__ray_metadata__.method_meta.class_attributes)
 
         id, method = self.classmethods[method_name]
         meta = self.__ray_metadata__
@@ -1097,12 +1203,12 @@ class ActorClass:
         worker.function_actor_manager.preload_class_methods((method_name, id, method),
                                                             function_descriptor)
         
-        print("FIIIIRRRSSSTTT", worker.current_job_id)
         
         worker.function_actor_manager.export_actor_class(
                 meta.modified_class,
                 meta.actor_creation_function_descriptor,
                 meta.method_meta.methods.keys(),
+                meta.modified_class.__ray_actor_class__,
             )
         
 
@@ -1111,26 +1217,20 @@ class ActorClass:
         #         not self._ray_is_cross_language
         #     ), "Cross language remote actor method cannot be executed locally."
 
-        if num_returns == "dynamic":
-            num_returns = -1
-        elif num_returns == "streaming":
-            # TODO(sang): This is a temporary private API.
-            # Remove it when we migrate to the streaming generator.
-            num_returns = ray._raylet.STREAMING_GENERATOR_RETURN
 
         object_refs = worker.core_worker.submit_task(
             self.__ray_metadata__.language,
             function_descriptor,
             list_args,
-            name,
+            method_name,
             num_returns,
-            {"CPU": 1},
-            1,
-            False,
-            None,
-            "DEFAULT",
+            resources,
+            max_retries,
+            retry_exceptions,
+            retry_exception_allowlist,
+            scheduling_strategy,
             worker.debugger_breakpoint,
-            "{}",
+            serialized_runtime_env_info or "{}",
         )
 
         if num_returns == STREAMING_GENERATOR_RETURN:
@@ -1214,7 +1314,6 @@ class ActorClass:
                 meta.actor_creation_function_descriptor,
             )
 
-            print("SEEECCCCOOONNDDD", worker.current_job_id)
 
             # return json.dumps(data)
             return key
@@ -1280,6 +1379,21 @@ class ActorClass:
         # There is no outer object ref when the actor handle is
         # deserialized out-of-band using pickle.
         return ActorClass._deserialization_helper, (serialized,)
+    
+    def __getattr__(self, name):
+
+        if "__ray_metadata__" in self.__dict__.keys():
+            if name in self.__ray_metadata__.method_meta.class_attributes:
+                return getattr(self.__ray_metadata__.modified_class.__ray_actor_class__, name)
+    
+    def __setattr__(self, name: str, value: Any) -> None:
+
+        if "__ray_metadata__" in self.__dict__.keys():
+            if name in self.__ray_metadata__.method_meta.class_attributes:
+                setattr(self.__ray_metadata__.modified_class.__ray_actor_class__, name, value)
+                setattr(self.__ray_metadata__, "class_updated", True)
+            
+        super().__setattr__(name, value)
 
 
 @PublicAPI
@@ -1324,6 +1438,7 @@ class ActorHandle:
         actor_creation_function_descriptor,
         session_and_job,
         original_handle=False,
+        actor_class=None,
     ):
         self._ray_actor_language = language
         self._ray_actor_id = actor_id
@@ -1338,6 +1453,10 @@ class ActorHandle:
             actor_creation_function_descriptor
         )
         self._ray_function_descriptor = {}
+        if isinstance(actor_class, ActorClass):
+            self._actor_class = actor_class
+        else:
+            self._actor_class = ActorClass._ray_from_modified_class(actor_class, ActorClassID.from_random(), {})
 
         if not self._ray_is_cross_language:
             assert isinstance(
@@ -1377,9 +1496,10 @@ class ActorHandle:
         method_name: str,
         args: List[Any] = None,
         kwargs: Dict[str, Any] = None,
-        name: str = "",
-        num_returns: Optional[int] = None,
-        concurrency_group_name: Optional[str] = None,
+        # name: str = "",
+        # num_returns: Optional[int] = None,
+        # concurrency_group_name: Optional[str] = None,
+        options: Dict[str, Any] = {},
     ):
         """Method execution stub for an actor handle.
 
@@ -1403,6 +1523,15 @@ class ActorHandle:
 
         args = args or []
         kwargs = kwargs or {}
+        if "num_returns" not in options:
+            num_returns = self._num_returns
+        else:
+            num_returns = options["num_returns"]
+
+        name = options.get("name")
+        if name is None:
+            name = ""
+        concurrency_group_name = options.get("concurrency_group", None)
         if self._ray_is_cross_language:
             list_args = cross_language._format_args(worker, args, kwargs)
             function_descriptor = cross_language._get_function_descriptor_for_actor_method(  # noqa: E501
@@ -1420,7 +1549,14 @@ class ActorHandle:
                 list_args = []
             else:
                 list_args = signature.flatten_args(function_signature, args, kwargs)
+
+            if method_name in self._actor_class.classmethods:
+                list_args.insert(0, self._actor_class)
+                list_args.insert(0, b"__RAY_DUMMY__")
+
             function_descriptor = self._ray_function_descriptor[method_name]
+        
+        # print("SECCCCONNNDDD", self._actor_class.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
 
         if worker.mode == ray.LOCAL_MODE:
             assert (

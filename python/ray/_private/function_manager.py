@@ -590,7 +590,7 @@ class FunctionActorManager:
             time.sleep(0.001)
 
     def export_actor_class(
-        self, Class, actor_creation_function_descriptor, actor_method_names, key_callback = None
+        self, Class, actor_creation_function_descriptor, actor_method_names, underlying_class = None
     ):
         if self._worker.load_code_from_local:
             module_name, class_name = (
@@ -626,6 +626,11 @@ class FunctionActorManager:
             f"Could not serialize the actor class "
             f"{actor_creation_function_descriptor.repr}",
         )
+
+        serialized_underlying = pickle_dumps(
+            underlying_class,
+            f"Could not serialize underlying class",
+        )
         actor_class_info = {
             "class_name": actor_creation_function_descriptor.class_name.split(".")[-1],
             "module": actor_creation_function_descriptor.module_name,
@@ -633,6 +638,7 @@ class FunctionActorManager:
             "job_id": job_id.binary(),
             "collision_identifier": self.compute_collision_identifier(Class),
             "actor_method_names": json.dumps(list(actor_method_names)),
+            "underlying_class": serialized_underlying,
         }
 
         check_oversized_function(
@@ -646,8 +652,8 @@ class FunctionActorManager:
             key, pickle.dumps(actor_class_info), True, KV_NAMESPACE_FUNCTION_TABLE
         )
 
-        if key_callback is not None:
-            key_callback(key)
+        # if key_callback is not None:
+        #     key_callback(key)
 
         # TODO(rkn): Currently we allow actor classes to be defined
         # within tasks. I tried to disable this, but it may be necessary
@@ -827,12 +833,12 @@ class FunctionActorManager:
 
         # Fetch raw data from GCS.
         vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
-        fields = ["job_id", "class_name", "module", "class", "actor_method_names"]
+        fields = ["job_id", "class_name", "module", "class", "actor_method_names", "underlying_class"]
         if vals is None:
             vals = {}
         else:
             vals = pickle.loads(vals)
-        (job_id_str, class_name, module, pickled_class, actor_method_names) = (
+        (job_id_str, class_name, module, pickled_class, actor_method_names, underlying_class) = (
             vals.get(field) for field in fields
         )
 
@@ -845,6 +851,7 @@ class FunctionActorManager:
         try:
             with self.lock:
                 actor_class = pickle.loads(pickled_class)
+                ray_actor_class = pickle.loads(underlying_class)
         except Exception as e:
             logger.debug("Failed to load actor class %s.", class_name)
             # If an exception was thrown when the actor was imported, we record
@@ -864,6 +871,7 @@ class FunctionActorManager:
         # However in the worker process, the `__main__` module is a
         # different module, which is `default_worker.py`
         actor_class.__module__ = module_name
+        actor_class.__ray_actor_class__ = ray_actor_class
         return actor_class
     
     # job_id, function_id
@@ -949,11 +957,10 @@ class FunctionActorManager:
 
         def actor_method_executor(__ray_actor, *args, **kwargs):
             # Execute the assigned method.
-            is_bound = is_class_method(method) or is_static_method(
-                type(__ray_actor), method_name
-            )
-            if is_bound:
+            if is_static_method(type(__ray_actor), method_name):
                 return method(*args, **kwargs)
+            if is_class_method(method):
+                return method.__func__(*args, **kwargs)
             else:
                 return method(__ray_actor, *args, **kwargs)
 

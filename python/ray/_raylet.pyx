@@ -1334,6 +1334,7 @@ cdef void execute_task(
     else:
         actor_id = core_worker.get_actor_id()
         actor = worker.actors[actor_id]
+        print(actor.__ray_actor_class__.__dict__)
         class_name = actor.__class__.__name__
         next_title = f"ray::{class_name}"
 
@@ -3526,7 +3527,8 @@ cdef class CoreWorker:
                                          method_meta.num_returns,
                                          actor_method_cpu,
                                          actor_creation_function_descriptor,
-                                         worker.current_session_and_job)
+                                         worker.current_session_and_job,
+                                         actor_class=actor_class)
         else:
             return ray.actor.ActorHandle(language, actor_id,
                                          {},  # method decorators
