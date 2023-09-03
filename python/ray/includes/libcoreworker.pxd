@@ -120,8 +120,6 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
             const CPlacementGroupID &placement_group_id)
         CRayStatus WaitPlacementGroupReady(
             const CPlacementGroupID &placement_group_id, int64_t timeout_seconds)
-        pair[CPlacementGroupID, CRayStatus] GetNamedPlacementGroup(
-            const c_string &name, const c_string &ray_namespace)
         CRayStatus SubmitActorTask(
             const CActorID &actor_id, const CRayFunction &function,
             const c_vector[unique_ptr[CTaskArg]] &args,
@@ -178,7 +176,6 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
         CTaskID GetCallerId()
         const ResourceMappingType &GetResourceIDs() const
         void RemoveActorHandleReference(const CActorID &actor_id)
-        void RemovePlacementHandleReference(const CPlacementGroupID &placement_group_id)
         CActorID DeserializeAndRegisterActorHandle(const c_string &bytes, const
                                                    CObjectID &outer_object_id)
         CRayStatus SerializeActorHandle(const CActorID &actor_id, c_string
@@ -189,11 +186,6 @@ cdef extern from "ray/core_worker/core_worker.h" nogil:
             const c_string &name, const c_string &ray_namespace)
         pair[c_vector[c_pair[c_string, c_string]], CRayStatus] ListNamedActors(
             c_bool all_namespaces)
-        CRayStatus SerializePlacementGroup(const CPlacementGroupID &placement_group_id,
-                                           c_string *output,
-                                           CObjectID *placement_handle_id)
-        CPlacementGroupID DeserializeAndRegisterPlacementGroup(const c_string &serialized,
-                                                               const CObjectID &outer_object_id)
         void AddLocalReference(const CObjectID &object_id)
         void RemoveLocalReference(const CObjectID &object_id)
         void PutObjectIntoPlasma(const CRayObject &object,

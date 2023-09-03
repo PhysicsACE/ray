@@ -1221,64 +1221,64 @@ except ImportError:
 
 #     wait_for_condition(actor_removed)
 
-# def test_actor_class_method(ray_start_regular_shared):
+def test_actor_class_method(ray_start_regular_shared):
 
-#     @ray.remote
-#     class Parent:
+    @ray.remote
+    class Parent:
 
-#         counter = 5
+        counter = 5
 
-#         def __init__(self, arg) -> None:
-#             self.arg = arg
+        def __init__(self, arg) -> None:
+            self.arg = arg
 
-#         def double_arg(self):
-#             return self.arg * 2 + self.counter
+        def double_arg(self):
+            return self.arg * 2 + self.counter
 
-#         @classmethod
-#         def testing(cls, arg):
-#             factoryinstance = cls.remote(arg)
+        @classmethod
+        def testing(cls, arg):
+            factoryinstance = cls.remote(arg)
             
-#             secondinstance = cls.remote(arg*2)
-#             cls.counter = 7
+            secondinstance = cls.remote(arg*2)
+            cls.counter = 7
             
-#             print("deserialized", secondinstance._actor_class.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
-#             s1 = ray.get(factoryinstance.double_arg.remote())
-#             s2 = ray.get(secondinstance.double_arg.remote())
+            print("deserialized", secondinstance._actor_class.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
+            s1 = ray.get(factoryinstance.double_arg.remote())
+            s2 = ray.get(secondinstance.double_arg.remote())
 
-#             return s1 + s2
+            return s1 + s2
 
-#             # print("First", cls.__ray_metadata__.modified_class.__ray_actor_class__)
+            # print("First", cls.__ray_metadata__.modified_class.__ray_actor_class__)
 
-#             # cls.counter = arg
+            # cls.counter = arg
         
-#         @classmethod
-#         def t(cls):
-#             print(cls.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
-#             return 1 == 2
+        @classmethod
+        def t(cls):
+            print(cls.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
+            return 1 == 2
         
-#         # @classmethod
-#         # def testing2(cls):
-#         #     Parent.counter += 1
-#         #     factoryinstance = cls.remote(Parent.counter)
-#         #     return ray.get(factoryinstance)
+        # @classmethod
+        # def testing2(cls):
+        #     Parent.counter += 1
+        #     factoryinstance = cls.remote(Parent.counter)
+        #     return ray.get(factoryinstance)
 
-#     # tester = Parent.remote(5)
-#     # assert ray.get(tester.doubl_arg.remote()) == 15
-#     # p1 = Parent.remote(1)
-#     # p2 = Parent.remote(2)
-#     # Parent.counter = 7
-#     # s1 = ray.get(p1.double_arg.remote())
-#     # s2 = ray.get(p2.double_arg.remote())
+    # tester = Parent.remote(5)
+    # assert ray.get(tester.doubl_arg.remote()) == 15
+    # p1 = Parent.remote(1)
+    # p2 = Parent.remote(2)
+    # Parent.counter = 7
+    # s1 = ray.get(p1.double_arg.remote())
+    # s2 = ray.get(p2.double_arg.remote())
 
-#     # assert s1 + s2 == 20
+    # assert s1 + s2 == 20
 
-#     @ray.remote
-#     def t():
-#         Parent.counter = 10
+    @ray.remote
+    def t():
+        Parent.counter = 10
 
-#     assert ray.get(Parent.testing.remote(1)) == 22
-#     Parent.counter = 10
-#     assert Parent.__ray_metadata__.modified_class.__ray_actor_class__.__dict__ == 7
+    assert ray.get(Parent.testing.remote(1)) == 22
+    Parent.counter = 10
+    assert Parent.__ray_metadata__.modified_class.__ray_actor_class__.__dict__ == 7
     
     
     # assert Parent.counter == 5
