@@ -546,6 +546,32 @@ class ReferenceCounter : public ReferenceCounterInterface,
   /// Release all local references which registered on this local.
   void ReleaseAllLocalReferences();
 
+  /// For placement group reference counting, submitted references are counted
+  /// when a placement group is provided as the scheduling strategy for an actor
+  /// of task. Hence, we increment the submitted task arg count and we will
+  /// decrement it after the task is done executing. 
+  void AddPlacementOptionReference(const ObjectID &placement_id) 
+    LOCKS_EXCLUDED(mutex_);
+
+  /// Decrement the submitted ref count for this placement group once
+  /// a task or actor task has been submitted. ALso, when an actor that 
+  /// was instantiated with this pg goes out of scope and is deleted from
+  /// the object store, we decrement that reference as well to keep track
+  /// of all the actors and task the rely on this pg handle.
+  void DecrementPlacementOptionReference(const ObjectID &placement_id)
+    LOCKS_EXCLUDED(mutex_);
+
+  /// Add an actor for which the specified object is required.
+  void AddPlacementRequiredReference(const ObjectID &placement_id,
+                                     const ObjectID &object_id)
+    LOCKS_EXCLUDED(mutex_);
+
+  /// Remove an actor for which the specified object is required. Used
+  /// when an actor either goes out of scope or is manually killed. 
+  void RemovePlacementRequiredReference(const ObjectID &placement_id,
+                                        const ObjectID &object_id)
+    LOCKS_EXCLUDED(mutex_);
+
  private:
   /// Contains information related to nested object refs only.
   struct NestedReferenceCount {
@@ -591,6 +617,19 @@ class ReferenceCounter : public ReferenceCounterInterface,
     ///     borrowers. A borrower is removed from the list when it responds
     ///     that it is no longer using the reference.
     absl::flat_hash_set<rpc::WorkerAddress> borrowers;
+  };
+
+  /// Contains information about all the Objects whose lifetimes require this object.
+  /// Currently used to store actors that are instantiated for a specefic
+  /// placement group handle for PG lifecycle management. 
+  struct RequiredInfo {
+    /// A List of Objects that require this object to function. This 
+    /// is currently only used for PG lifecycle management to automatically free
+    /// PG reserved resources. We add an ActorID to this set when an actor is
+    /// instantiated in the frontend with a specific placement group. We keep track
+    /// of the specific actors lifecycle and when it goes out of scope or is manually
+    /// killed in the frontend, we remove its respective ActorID from this set. 
+    absl::flat_hash_set<ObjectID> required;
   };
 
   struct Reference {
@@ -642,6 +681,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
       bool is_nested = nested().contained_in_borrowed_ids.size();
       bool has_borrowers = borrow().borrowers.size() > 0;
       bool was_stored_in_objects = borrow().stored_in_objects.size() > 0;
+      bool has_required = required().required.size() > 0;
 
       bool has_lineage_references = false;
       if (lineage_pinning_enabled && owned_by_us && !is_reconstructable) {
@@ -649,7 +689,7 @@ class ReferenceCounter : public ReferenceCounterInterface,
       }
 
       return !(in_scope || is_nested || has_nested_refs_to_report || has_borrowers ||
-               was_stored_in_objects || has_lineage_references);
+               was_stored_in_objects || has_lineage_references || has_required);
     }
 
     /// Whether the Reference can be deleted. A Reference can only be deleted
@@ -682,6 +722,21 @@ class ReferenceCounter : public ReferenceCounterInterface,
         borrow_info = std::make_unique<BorrowInfo>();
       }
       return borrow_info.get();
+    }
+
+    const RequiredInfo &required() const {
+      if (required_info == nullptr) {
+        static auto *default_info = new RequiredInfo();
+        return *default_info;
+      }
+      return *required_info;
+    }
+
+    RequiredInfo *mutable_required() {
+      if (required_info == nullptr) {
+        required_info = std::make_unique<RequiredInfo>();
+      }
+      return required_info.get();
     }
 
     /// Access NestedReferenceCount without modifications.
@@ -748,6 +803,9 @@ class ReferenceCounter : public ReferenceCounterInterface,
 
     /// Metadata related to borrowing.
     std::unique_ptr<BorrowInfo> borrow_info;
+
+    /// Metadata related to required Actors/Objects
+    std::unique_ptr<RequiredInfo> required_info;
 
     /// Callback that will be called when this ObjectID no longer has
     /// references.
@@ -1048,6 +1106,11 @@ class ReferenceCounter : public ReferenceCounterInterface,
 
   /// Keep track of actors owend by this worker.
   size_t num_actors_owned_by_us_ GUARDED_BY(mutex_) = 0;
+
+  /// Used to store object ids that are included in refernce counting for
+  /// lifecycle management purposes but do not have associated IDs in the language
+  /// frontend. This currently includes placment group and actor handles
+  absl::flat_hash_set<ObjectID> phantom_references_ GUARDED_BY(mutex_);
 };
 
 }  // namespace core
