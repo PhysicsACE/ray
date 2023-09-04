@@ -34,7 +34,7 @@ class ActorManager {
   explicit ActorManager(
       std::shared_ptr<gcs::GcsClient> gcs_client,
       std::shared_ptr<CoreWorkerDirectActorTaskSubmitterInterface> direct_actor_submitter,
-      std::shared_ptr<ReferenceCounterInterface> reference_counter)
+      std::shared_ptr<ReferenceCounter> reference_counter)
       : gcs_client_(gcs_client),
         direct_actor_submitter_(direct_actor_submitter),
         reference_counter_(reference_counter) {}
@@ -133,6 +133,8 @@ class ActorManager {
   /// \param actor_id ID of the actor to be subscribed.
   void SubscribeActorState(const ActorID &actor_id);
 
+  bool AddAssociatedPlacementGroup(const ActorID &actor_id, const PlacementGroupID &placement_group_id);
+
  private:
   /// Give this worker a handle to an actor.
   ///
@@ -178,6 +180,11 @@ class ActorManager {
   /// Check if actor is valid.
   bool IsActorKilledOrOutOfScope(const ActorID &actor_id) const;
 
+  /// Get the placement group that the actor uses
+  PlacementGroupID GetPlacementGroupHandle(const ActorID &actor_id);
+
+  bool PlacementGroupHandleExists(const ActorID &actor_id);
+
   /// GCS client.
   std::shared_ptr<gcs::GcsClient> gcs_client_;
 
@@ -186,13 +193,16 @@ class ActorManager {
 
   /// Used to keep track of actor handle reference counts.
   /// All actor handle related ref counting logic should be included here.
-  std::shared_ptr<ReferenceCounterInterface> reference_counter_;
+  std::shared_ptr<ReferenceCounter> reference_counter_;
 
   mutable absl::Mutex mutex_;
 
   /// Map from actor ID to a handle to that actor.
   /// Actor handle is a logical abstraction that holds actor handle's states.
   absl::flat_hash_map<ActorID, std::shared_ptr<ActorHandle>> actor_handles_
+      GUARDED_BY(mutex_);
+
+  absl::flat_hash_map<ActorID, PlacementGroupID> placement_group_handles_
       GUARDED_BY(mutex_);
 
   /// Protects access `cached_actor_name_to_ids_` and `subscribed_actors_`.

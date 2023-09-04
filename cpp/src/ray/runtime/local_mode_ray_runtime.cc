@@ -41,6 +41,13 @@ ActorID LocalModeRayRuntime::GetNextActorID() {
   return actor_id;
 }
 
+PlacementGroupID LocalModeRayRuntime::GetNextPlacementGroupID() {
+  const auto next_task_index = worker_.GetNextTaskIndex();
+  const PlacementGroupID pg_id = 
+      PlacementGroupID::Of(worker_.GetCurrentJobID(), worker_.GetCurrentTaskID(), next_task_index);
+  return pg_id;
+}
+
 const WorkerContext &LocalModeRayRuntime::GetWorkerContext() { return worker_; }
 
 std::string LocalModeRayRuntime::Put(std::shared_ptr<msgpack::sbuffer> data) {

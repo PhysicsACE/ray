@@ -3377,6 +3377,27 @@ cdef class CoreWorker:
                     placement_group_id))
         return status.ok()
 
+    def serialize_placement_group(self, PlacementGroupID placement_group_id):
+        cdef:
+            c_string output
+            CObjectID c_pg_handle_id
+        check_status(CCoreWorkerProcess.GetCoreWorker().SerializePlacementGroup(
+            placement_group_id.native(), &output, &c_pg_handle_id))
+        return output, ObjectRef(c_pg_handle_id.Binary())
+
+    def deserialize_and_register_placement_group(self, const c_string &bytes,
+                                              ObjectRef
+                                              outer_object_ref):
+        cdef:
+            CObjectID c_outer_object_id = (outer_object_ref.native() if
+                                           outer_object_ref else
+                                           CObjectID.Nil())
+        c_placement_group_id = (CCoreWorkerProcess
+                      .GetCoreWorker()
+                      .DeserializeAndRegisterPlacementGroup(
+                          bytes, c_outer_object_id))
+        return PlacementGroupID(c_placement_group_id.Binary())
+
     def submit_actor_task(self,
                           Language language,
                           ActorID actor_id,

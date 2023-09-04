@@ -47,6 +47,7 @@ from ray.exceptions import (
 )
 from ray.util import serialization_addons
 from ray.util import inspect_serializability
+from ray.util.placement_group import PlacementGroup
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,11 @@ def _actor_handle_deserializer(serialized_obj):
 def _actor_class_deserializer(serialized):
     return ray.actor.ActorClass._deserialization_helper(serialized)
 
+def _placement_group_deserializer(serialized_obj):
+    context = ray._private.worker.global_worker.get_serialization_context()
+    outer_id = context.get_outer_object_ref()
+    return PlacementGroup._deserialization_helper(serialized_obj, outer_id)
+
 
 class SerializationContext:
     """Initialize the serialization library.
@@ -151,6 +157,16 @@ class SerializationContext:
             return _actor_class_deserializer, (serialized,)
         
         self._register_cloudpickle_reducer(ray.actor.ActorClass, actor_class_reducer)
+
+        def placement_group_reducer(obj):
+            ray._private.worker.global_worker.check_connected()
+            serialized, pg_handle_id = obj._serialization_helper()
+            # Update ref counting for the actor handle
+            self.add_contained_object_ref(pg_handle_id)
+            return _placement_group_deserializer, (serialized,)
+
+        self._register_cloudpickle_reducer(PlacementGroup,
+                                           placement_group_reducer)
 
         def object_ref_generator_reducer(obj):
             return ObjectRefGenerator, (obj._refs,)
@@ -446,6 +462,11 @@ class SerializationContext:
         elif isinstance(value, ray.actor.ActorClass):
             serialized = value._serialization_helper()
             metadata = ray_constants.OBJECT_METADATA_TYPE_ACTOR_CLASS
+            value = serialized
+        elif isinstance(value, PlacementGroup):
+            serialized, pg_handle_id = value._serialization_helper()
+            contained_object_refs.append(pg_handle_id)
+            metadata = ray_constants.OBJECT_METADATA_TYPE_PG_HANDLE
             value = serialized
         else:
             metadata = ray_constants.OBJECT_METADATA_TYPE_CROSS_LANGUAGE

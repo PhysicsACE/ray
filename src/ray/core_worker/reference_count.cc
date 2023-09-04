@@ -883,10 +883,65 @@ ReferenceCounter::GetAllReferenceCounts() const {
   std::unordered_map<ObjectID, std::pair<size_t, size_t>> all_ref_counts;
   all_ref_counts.reserve(object_id_refs_.size());
   for (const auto &[id, ref] : object_id_refs_) {
+
+    if (phantom_references_.find(id) != phantom_references_.end()) {
+      continue;
+    }
+
     all_ref_counts.emplace(
         id, std::pair<size_t, size_t>(ref.local_ref_count, ref.submitted_task_ref_count));
   }
   return all_ref_counts;
+}
+
+void ReferenceCounter::AddPlacementOptionReference(const ObjectID &object_id) {
+
+  if (object_id.IsNil()) {
+    return;
+  }
+  absl::MutexLock lock(&mutex_);
+  auto it = object_id_refs_.find(object_id);
+  it->second.submitted_task_ref_count++;
+  RAY_LOG(DEBUG) << "Add PG Option reference " << object_id;
+  PRINT_REF_COUNT(it);
+}
+
+void ReferenceCounter::DecrementPlacementOptionReference(const ObjectID &object_id) {
+  if (object_id.IsNil()) {
+    return;
+  }
+  absl::MutexLock lock(&mutex_);
+  auto it = object_id_refs_.find(object_id);
+  it->second.submitted_task_ref_count--;
+  RAY_LOG(DEBUG) << "Add PG Option reference " << object_id;
+  PRINT_REF_COUNT(it);
+}
+
+/// Add an ActorID that required the specified placementgroup upon instantiation
+void ReferenceCounter::AddPlacementRequiredReference(const ObjectID &placement_id,
+                                                     const ObjectID &object_id) {
+
+  if (placement_id.IsNil() || object_id.IsNil()) {
+    return;
+  }
+
+  auto it = object_id_refs_.find(placement_id);
+  RAY_CHECK(it != object_id_refs_.end()) << placement_id;
+  it->second.mutable_required()->required.insert(object_id).second;
+  RAY_LOG(DEBUG) << "Add Required Actor Reference" << placement_id;
+
+}
+
+void ReferenceCounter::RemovePlacementRequiredReference(const ObjectID &placement_id,
+                                                        const ObjectID &object_id) {
+
+  if (placement_id.IsNil() || object_id.IsNil()) {
+    return;
+  }
+
+  auto it = object_id_refs_.find(placement_id);
+  RAY_CHECK(it->second.mutable_required()->required.erase(object_id));
+
 }
 
 void ReferenceCounter::PopAndClearLocalBorrowers(

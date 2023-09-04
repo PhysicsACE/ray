@@ -172,6 +172,7 @@ cdef extern from "ray/common/id.h" namespace "ray" nogil:
         size_t Size()
 
         @staticmethod
-        CPlacementGroupID Of(CJobID job_id)
+        CPlacementGroupID Of(CJobID job_id, CTaskID parent_task_id,
+                    int64_t parent_task_counter)
 
     ctypedef uint32_t ObjectIDIndexType
