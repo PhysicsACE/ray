@@ -114,43 +114,6 @@ class PlacementGroup:
 
     def __hash__(self):
         return hash(self.id)
-    
-    def _serialization_helper(self):
-        worker = ray._private.worker.global_worker
-        worker.check_connected()
-
-        if hasattr(worker, "core_worker"):
-            # Non-local mode
-            state = worker.core_worker.serialize_placement_group(self.id)
-        else:
-            # Local mode
-            state = (
-                {
-                    "placement_group_id": self.id,
-                },
-                None,
-            )
-
-        return state
-    
-    @classmethod
-    def _deserialization_helper(cls, state, outer_object_ref=None):
-        worker = ray._private.worker.global_worker
-        worker.check_connected()
-
-        if hasattr(worker, "core_worker"):
-            # Non-local mode
-            return worker.core_worker.deserialize_and_register_placement_group(
-                state, outer_object_ref
-            )
-        else:
-            # Local mode
-            return cls(
-                # TODO(swang): Accessing the worker's current task ID is not
-                # thread-safe.
-                state["placement_group_id"],
-                worker.current_session_and_job,
-            )
 
 
 @client_mode_wrap

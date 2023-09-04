@@ -161,7 +161,7 @@ ActorID LocalModeTaskSubmitter::GetActor(const std::string &actor_name,
 ray::PlacementGroup LocalModeTaskSubmitter::CreatePlacementGroup(
     const ray::PlacementGroupCreationOptions &create_options) {
   ray::PlacementGroup placement_group{
-      local_mode_ray_tuntime_.GetNextPlacementGroupID().Binary(),
+      PlacementGroupID::Of(local_mode_ray_tuntime_.GetCurrentJobID()).Binary(),
       create_options};
   placement_group.SetWaitCallbak([this](const std::string &id, int64_t timeout_seconds) {
     return WaitPlacementGroupReady(id, timeout_seconds);

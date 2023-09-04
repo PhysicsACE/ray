@@ -69,11 +69,6 @@ message ActorHandle {
   int32 max_pending_calls = 13;
 }
 
-message PlacementGroupHandle {
-  // The ID of the placement group for this handle
-  bytes placement_group_id = 1;
-}
-
 message PushTaskRequest {
   // The ID of the worker this message is intended for.
   bytes intended_worker_id = 1;

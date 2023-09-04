@@ -194,13 +194,6 @@ void ActorManager::WaitForActorOutOfScope(
                         const ObjectID &object_id) {
       MarkActorKilledOrOutOfScope(actor_handle);
       actor_out_of_scope_callback(actor_id);
-      if (PlacementGroupHandleExists(actor_id)) {
-        auto it = placement_group_handles_.find(actor_id);
-        ObjectID pg_handle_id = it->second.GeneratePlacementHandle();
-        reference_counter_->RemovePlacementRequiredReference(pg_handle_id, 
-                                ObjectID::ForActorHandle(actor_id));
-        placement_group_handles_.erase(it);
-      }
     };
 
     // Returns true if the object was present and the callback was added. It might have
@@ -211,13 +204,6 @@ void ActorManager::WaitForActorOutOfScope(
       RAY_LOG(DEBUG) << "ActorID reference already gone for " << actor_id;
       MarkActorKilledOrOutOfScope(actor_handle);
       actor_out_of_scope_callback(actor_id);
-      if (PlacementGroupHandleExists(actor_id)) {
-        auto it = placement_group_handles_.find(actor_id);
-        ObjectID pg_handle_id = it->second.GeneratePlacementHandle();
-        reference_counter_->RemovePlacementRequiredReference(pg_handle_id, 
-                                ObjectID::ForActorHandle(actor_id));
-        placement_group_handles_.erase(it);
-      }
     }
   }
 }
@@ -349,26 +335,6 @@ bool ActorManager::IsActorKilledOrOutOfScope(const ActorID &actor_id) const {
   absl::MutexLock lock(&cache_mutex_);
   auto iter = subscribed_actors_.find(actor_id);
   return iter == subscribed_actors_.end() || !iter->second;
-}
-
-PlacementGroupID ActorManager::GetPlacementGroupHandle(const ActorID &actor_id) {
-  absl::MutexLock lock(&mutex_);
-  auto it = placement_group_handles_.find(actor_id);
-  RAY_CHECK(it != placement_group_handles_.end())
-      << "Cannot find an associated placement group for actor of id, " << actor_id
-      << ". This method should be called only when you ensure actor handles exists.";
-  return it->second;
-}
-
-bool ActorManager::PlacementGroupHandleExists(const ActorID &actor_id) {
-  absl::MutexLock lock(&mutex_);
-  return placement_group_handles_.find(actor_id) != placement_group_handles_.end();
-}
-
-bool ActorManager::AddAssociatedPlacementGroup(const ActorID &actor_id,
-                                               const PlacementGroupID &placement_group_id) {
-  absl::MutexLock lock(&mutex_);
-  return placement_group_handles_.emplace(actor_id, placement_group_id).second;
 }
 
 }  // namespace core

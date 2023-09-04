@@ -1223,8 +1223,6 @@ except ImportError:
 
 def test_actor_class_method(ray_start_regular_shared):
 
-    print("HEEELLLOOOOO")
-
     @ray.remote
     class Parent:
 
