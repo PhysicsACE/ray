@@ -56,6 +56,9 @@ def make_function_table_key(key_type: bytes, job_id: JobID, key: Optional[bytes]
         return b":".join([key_type, job_id.hex().encode()])
     else:
         return b":".join([key_type, job_id.hex().encode(), key])
+    
+def make_attribute_table_key(key_type: bytes, key: bytes):
+    return b":".join([key_type, key])
 
 
 def make_export_key(pos: int, job_id: JobID) -> bytes:
@@ -118,14 +121,15 @@ class FunctionActorManager:
         function_id = function_descriptor.function_id
         return self._num_task_executions[function_id]
     
-    def get_actor_class_key(self, job_id, actor_creation_function_descriptor):
-        key = make_function_table_key(
-            b"ActorClass",
-            job_id,
-            actor_creation_function_descriptor.function_id.binary(),
-        )
+    def get_actor_class_key(self, job_id, actor_creation_function_descriptor, class_id):
+        # key = make_function_table_key(
+        #     b"ActorClass",
+        #     job_id,
+        #     actor_creation_function_descriptor.function_id.binary(),
+        # )
 
-        return key
+        return b":".join([b"ActorClass", job_id.hex().encode(), actor_creation_function_descriptor.function_id.binary(), class_id.binary()])
+    
 
     def compute_collision_identifier(self, function_or_class):
         """The identifier is used to detect excessive duplicate exports.
@@ -627,10 +631,12 @@ class FunctionActorManager:
             f"{actor_creation_function_descriptor.repr}",
         )
 
-        serialized_underlying = pickle_dumps(
-            underlying_class,
-            f"Could not serialize underlying class",
-        )
+
+        if underlying_class is not None:
+            serialized_underlying = pickle_dumps(
+                underlying_class,
+                f"Could not serialize underlying class",
+            )
         actor_class_info = {
             "class_name": actor_creation_function_descriptor.class_name.split(".")[-1],
             "module": actor_creation_function_descriptor.module_name,
@@ -638,7 +644,6 @@ class FunctionActorManager:
             "job_id": job_id.binary(),
             "collision_identifier": self.compute_collision_identifier(Class),
             "actor_method_names": json.dumps(list(actor_method_names)),
-            "underlying_class": serialized_underlying,
         }
 
         check_oversized_function(
@@ -787,6 +792,51 @@ class FunctionActorManager:
             key, pickle.dumps(method_info), True, KV_NAMESPACE_FUNCTION_TABLE
         )
 
+    def export_actor_class_attributes(self, class_attributes, class_id):
+
+        if self._worker.load_code_from_local:
+            return
+        
+        key = make_attribute_table_key(
+            b"ClassAttributes",
+            class_id.binary(),
+        )
+
+        serialized_attributes = pickle_dumps(class_attributes, "Cannot serialize class attributes")
+
+        self._worker.gcs_client.internal_kv_put(
+            key, serialized_attributes, True, KV_NAMESPACE_FUNCTION_TABLE
+        )
+
+    def get_actor_class_attributes(self, class_id):
+
+        if self._worker.load_code_from_local:
+            return
+        
+        key = make_attribute_table_key(
+            b"ClassAttributes",
+            class_id.binary(),
+        )
+
+        vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
+
+        attributes = pickle.loads(vals)
+
+        return attributes
+    
+    def class_attributes_exported(self, class_id):
+
+        if self._worker.load_code_from_local:
+            return
+        
+        key = make_attribute_table_key(
+            b"ClassAttributes",
+            class_id.binary(),
+        )
+
+        return self._worker.gcs_client.internal_kv_exists(key, KV_NAMESPACE_FUNCTION_TABLE)
+
+
     def _load_actor_class_from_local(self, actor_creation_function_descriptor):
         """Load actor class from local code."""
         module_name, class_name = (
@@ -833,12 +883,12 @@ class FunctionActorManager:
 
         # Fetch raw data from GCS.
         vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
-        fields = ["job_id", "class_name", "module", "class", "actor_method_names", "underlying_class"]
+        fields = ["job_id", "class_name", "module", "class", "actor_method_names"]
         if vals is None:
             vals = {}
         else:
             vals = pickle.loads(vals)
-        (job_id_str, class_name, module, pickled_class, actor_method_names, underlying_class) = (
+        (job_id_str, class_name, module, pickled_class, actor_method_names) = (
             vals.get(field) for field in fields
         )
 
@@ -851,7 +901,7 @@ class FunctionActorManager:
         try:
             with self.lock:
                 actor_class = pickle.loads(pickled_class)
-                ray_actor_class = pickle.loads(underlying_class)
+                # ray_actor_class = pickle.loads(underlying_class)
         except Exception as e:
             logger.debug("Failed to load actor class %s.", class_name)
             # If an exception was thrown when the actor was imported, we record
@@ -871,7 +921,7 @@ class FunctionActorManager:
         # However in the worker process, the `__main__` module is a
         # different module, which is `default_worker.py`
         actor_class.__module__ = module_name
-        actor_class.__ray_actor_class__ = ray_actor_class
+        # actor_class.__ray_actor_class__ = ray_actor_class
         return actor_class
     
     # job_id, function_id

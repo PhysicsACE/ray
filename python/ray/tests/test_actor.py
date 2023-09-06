@@ -1232,16 +1232,15 @@ def test_actor_class_method(ray_start_regular_shared):
             self.arg = arg
 
         def double_arg(self):
-            return self.arg * 2 + self.counter
+            return self.arg * 2 
 
         @classmethod
         def testing(cls, arg):
+            print("Reconstructed", cls.__ray_metadata__.class_id)
             factoryinstance = cls.remote(arg)
             
             secondinstance = cls.remote(arg*2)
-            cls.counter = 7
             
-            print("deserialized", secondinstance._actor_class.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
             s1 = ray.get(factoryinstance.double_arg.remote())
             s2 = ray.get(secondinstance.double_arg.remote())
 
@@ -1253,8 +1252,9 @@ def test_actor_class_method(ray_start_regular_shared):
         
         @classmethod
         def t(cls):
-            print(cls.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
-            return 1 == 2
+            cls.counter = 6
+            return True
+        
         
         # @classmethod
         # def testing2(cls):
@@ -1272,13 +1272,16 @@ def test_actor_class_method(ray_start_regular_shared):
 
     # assert s1 + s2 == 20
 
-    @ray.remote
-    def t():
-        Parent.counter = 10
-
-    assert ray.get(Parent.testing.remote(1)) == 22
-    Parent.counter = 10
-    assert Parent.__ray_metadata__.modified_class.__ray_actor_class__.__dict__ == 7
+    
+    assert ray.get(Parent.t.remote()) == True
+    # assert ray._private.worker.global_worker.function_actor_manager.get_actor_class_attributes(Parent.__ray_metadata__.class_id) == 1
+    assert Parent.counter == 5
+    assert ray.get(Parent.testing.remote(1)) == 10
+    # Parent.counter = 10
+    # ray.get(t.remote())
+    # Parent.counter = 10
+    # assert testingremote.sum == 7
+    # assert Parent.counter == 7
     
     
     # assert Parent.counter == 5

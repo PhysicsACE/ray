@@ -10,6 +10,7 @@ import ray._private.signature as signature
 import ray._private.worker
 import ray._raylet
 from ray import ActorClassID, Language, cross_language
+from ray import cloudpickle as pickle
 from ray._private import ray_option_utils
 from ray._private.async_compat import is_async_func
 from ray._private.auto_init_hook import auto_init_ray
@@ -24,6 +25,7 @@ from ray._private.inspect_util import (
     is_static_method,
 )
 from ray._private.ray_option_utils import _warn_if_using_deprecated_placement_group
+from ray._private.serialization import pickle_dumps
 from ray._private.utils import get_runtime_env_info, parse_runtime_env
 from ray._raylet import (
     STREAMING_GENERATOR_RETURN,
@@ -258,7 +260,7 @@ class _ActorClassMethodMetadata(object):
         self.num_returns = {}
         self.concurrency_group_for_methods = {}
         self.class_methods = set()
-        self.class_attributes = set()
+        self.class_attributes = {}
 
         for method_name, method in actor_methods:
             # Whether or not this method requires binding of its first
@@ -299,7 +301,8 @@ class _ActorClassMethodMetadata(object):
             if k[:2] != "__":
                 value = getattr(modified_class.__ray_actor_class__, k)
                 if not callable(value):
-                    self.class_attributes.add(k)
+                    # self.class_attributes.add(k)
+                    self.class_attributes[k] = value
 
         # Update cache.
         cls._cache[actor_creation_function_descriptor] = self
@@ -541,6 +544,14 @@ class ActorClass:
                 self.classmethods[method_name] = (function_descriptor.function_id,
                                              method_descriptor.__func__)
                 setattr(self, method_name, method)
+
+
+        # meta = self.__ray_metadata__
+
+        # worker.function_actor_manager.export_actor_class_attributes(
+        #     meta.method_meta.class_attributes,
+        #     meta.class_id,
+        # )
 
         return self
 
@@ -1309,9 +1320,18 @@ class ActorClass:
             """
 
             meta = self.__ray_metadata__
+
+            worker.function_actor_manager.export_actor_class(
+                meta.modified_class,
+                meta.actor_creation_function_descriptor,
+                meta.method_meta.methods.keys(),
+                meta.modified_class.__ray_actor_class__,
+            )
+
             key = worker.function_actor_manager.get_actor_class_key(
                 worker.current_job_id,
                 meta.actor_creation_function_descriptor,
+                meta.class_id,
             )
 
 
@@ -1355,9 +1375,20 @@ class ActorClass:
             # job_id = ray._raylet.JobID.from_int(data["job_id"])
             # function_id = data["function_id"].encode()
 
+            # metadata = pickle.loads(serialized)
+            # key = metadata["key"]
+            # class_id = ["class_id"]
+            # key, class_id = serialized
+            # class_id = ActorClassID(bclass_id)
+            # print("Serialized", serialized)
             # actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(job_id, function_id)
-            actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(serialized)
-            return ActorClass._ray_from_modified_class(actor_class, ActorClassID.from_random(), {})
+            split = serialized.split(b":")
+            print("SPLLIITITIT", split)
+            class_id = ActorClassID.from_binary(split[3])
+            kv_key = [split[0], split[1], split[2]]
+            gcs_key = b":".join(kv_key)
+            actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(gcs_key)
+            return ActorClass._ray_from_modified_class(actor_class, class_id, {})
         # else:
         #     # Local mode
         #     return cls(
@@ -1375,23 +1406,64 @@ class ActorClass:
 
     def __reduce__(self):
         """This code path is used by pickling but not by Ray forking."""
-        serialized = self._serialization_helper()
+        serialized, class_id = self._serialization_helper()
         # There is no outer object ref when the actor handle is
         # deserialized out-of-band using pickle.
-        return ActorClass._deserialization_helper, (serialized,)
+        return ActorClass._deserialization_helper, (serialized, class_id,)
     
-    def __getattr__(self, name):
+    def __getattribute__(self, name: str) -> Any:
 
-        if "__ray_metadata__" in self.__dict__.keys():
-            if name in self.__ray_metadata__.method_meta.class_attributes:
-                return getattr(self.__ray_metadata__.modified_class.__ray_actor_class__, name)
+        d = super().__getattribute__("__dict__")
+        
+        if "__ray_metadata__" in d:
+
+            metadata = super().__getattribute__("__ray_metadata__")
+
+            if name in metadata.method_meta.class_attributes:
+
+                worker = ray._private.worker.global_worker
+                worker.check_connected()
+
+                if not worker.function_actor_manager.class_attributes_exported(metadata.class_id):
+                    worker.function_actor_manager.export_actor_class_attributes(
+                        metadata.method_meta.class_attributes,
+                        metadata.class_id,
+                    )
+
+                    return getattr(metadata.modified_class.__ray_actor_class__, name)
+
+                attributes = worker.function_actor_manager.get_actor_class_attributes(metadata.class_id)
+
+                return attributes[name]
+            
+        return super().__getattribute__(name)
+
     
     def __setattr__(self, name: str, value: Any) -> None:
 
         if "__ray_metadata__" in self.__dict__.keys():
             if name in self.__ray_metadata__.method_meta.class_attributes:
-                setattr(self.__ray_metadata__.modified_class.__ray_actor_class__, name, value)
-                setattr(self.__ray_metadata__, "class_updated", True)
+
+                worker = ray._private.worker.global_worker
+                worker.check_connected()
+
+                meta = self.__ray_metadata__
+
+                if not worker.function_actor_manager.class_attributes_exported(meta.class_id):
+                    worker.function_actor_manager.export_actor_class_attributes(
+                        meta.method_meta.class_attributes,
+                        meta.class_id,
+                    )
+                    attributes = meta.method_meta.class_attributes
+                else:
+                    attributes = worker.function_actor_manager.get_actor_class_attributes(meta.class_id)
+
+                attributes[name] = value
+
+                worker.function_actor_manager.export_actor_class_attributes(
+                    meta.method_meta.class_attributes,
+                    meta.class_id,
+                )
             
         super().__setattr__(name, value)
 
