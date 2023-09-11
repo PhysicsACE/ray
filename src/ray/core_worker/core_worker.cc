@@ -1948,6 +1948,17 @@ Status CoreWorker::CreateActor(const RayFunction &function,
                                   actor_creation_options.scheduling_strategy);
   auto new_resource = AddPlacementGroupConstraint(
       actor_creation_options.resources, actor_creation_options.scheduling_strategy);
+
+  auto placement_group_id = PlacementGroupID::Nil();
+  if (actor_creation_options.scheduling_strategy.scheduling_strategy_case() ==
+      rpc::SchedulingStrategy::SchedulingStrategyCase::kPlacementGroupSchedulingStrategy) {
+    
+    placement_group_id = PlacementGroupID::FromBinary(
+      actor_creation_options.scheduling_strategy.placement_group_scheduling_strategy().placement_group_id()
+    );
+    AddPlacementRequiredReference(placement_group_id, actor_id);
+  }
+
   const auto actor_name = actor_creation_options.name;
   const auto task_name =
       actor_name.empty()
@@ -2015,6 +2026,11 @@ Status CoreWorker::CreateActor(const RayFunction &function,
       std::move(actor_handle), CurrentCallSite(), rpc_address_, is_detached))
       << "Actor " << actor_id << " already exists";
   *return_actor_id = actor_id;
+  /// An actor handle is created before the actor creation task is submitted to ensure
+  /// that a reference to the handle exists. Here, we add the corresponding placment group id
+  /// to the flat hash set for easy access to ensure that when WaitFroActorOutOfScopeRequest is made
+  /// by GCS, this actor id has its respective placement group stored for when the actor goes out of scope.
+  RAY_CHECK(actor_manager_->AddAssociatedPlacementGroup(actor_id, placement_group_id));
   TaskSpecification task_spec = builder.Build();
   RAY_LOG(DEBUG) << "Submitting actor creation task " << task_spec.DebugString();
   if (options_.is_local_mode) {
@@ -2172,7 +2188,7 @@ void CoreWorker::AddLocalPlacementHandleReference(const PlacementGroupID &placem
                                        false);
   }
 
-  reference_counter_->AddLocalReference(pg_handle_id, call_site);
+  // reference_counter_->AddLocalReference(pg_handle_id, call_site);
 
 }
 
