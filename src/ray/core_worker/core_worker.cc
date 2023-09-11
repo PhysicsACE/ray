@@ -2110,9 +2110,15 @@ Status CoreWorker::CreatePlacementGroup(
            << ". It is probably "
               "because GCS server is dead or there's a high load there.";
     return Status::TimedOut(stream.str());
-  } else {
-    return status;
+  } else if (status.ok()) {
+    AddLocalPlacementHandleReference(placement_group_id,
+                                  CurrentCallSite(),
+                                  rpc_address_,
+                                  placement_group_creation_options.is_detached);
+
+    OutOfScopePGCallback(placement_group_id);
   }
+  return status;
 }
 
 Status CoreWorker::RemovePlacementGroup(const PlacementGroupID &placement_group_id) {
@@ -2143,6 +2149,63 @@ Status CoreWorker::WaitPlacementGroupReady(const PlacementGroupID &placement_gro
   } else {
     return status;
   }
+}
+
+void CoreWorker::RemovePlacementHandleReference(const PlacementGroupID &placement_id) {
+  ObjectID pg_handle_id = placement_id.GeneratePlacementHandle();
+  reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+}
+
+void CoreWorker::AddLocalPlacementHandleReference(const PlacementGroupID &placement_group_id,
+                                                  const std::string &call_site,
+                                                  const rpc::Address &caller_address,
+                                                  bool is_detached) {
+
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  if (!is_detached) {
+    reference_counter_->AddOwnedObject(pg_handle_id,
+                                       {},
+                                       caller_address,
+                                       call_site,
+                                       -1,
+                                       true,
+                                       false);
+  }
+
+  reference_counter_->AddLocalReference(pg_handle_id, call_site);
+
+}
+
+void CoreWorker::AddPlacementOptionReference(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->AddPlacementOptionReference(pg_object_id);
+}
+
+void CoreWorker::RemovePlacementOptionReference(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->DecrementPlacementOptionReference(pg_object_id);
+}
+
+void CoreWorker::AddPlacementRequiredReference(const PlacementGroupID &placement_group_id,
+                                               const ActorID &actor_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->AddPlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
+}
+
+void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id,
+                                                  const ActorID &actor_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->RemovePlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
+}
+
+void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  auto callback = [this, placement_group_id](
+    const ObjectID &object_id
+  ) {
+    RemovePlacementGroup(placement_group_id);
+  };
+  reference_counter_->SetDeleteCallback(pg_handle_id, callback);
 }
 
 Status CoreWorker::SubmitActorTask(const ActorID &actor_id,
