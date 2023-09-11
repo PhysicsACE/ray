@@ -1223,25 +1223,25 @@ except ImportError:
 
 def test_actor_class_method(ray_start_regular_shared):
 
-    @ray.remote
     class Parent:
 
-        counter = 5
+        
 
         def __init__(self, arg) -> None:
             self.arg = arg
 
         def double_arg(self):
-            return self.arg * 2 
+            return self.arg * 2 + self.counter
 
         @classmethod
         def testing(cls, arg):
             print("Reconstructed", cls.__ray_metadata__.class_id)
             factoryinstance = cls.remote(arg)
+            s1 = ray.get(factoryinstance.double_arg.remote())
+
+            cls.counter = 6
             
             secondinstance = cls.remote(arg*2)
-            
-            s1 = ray.get(factoryinstance.double_arg.remote())
             s2 = ray.get(secondinstance.double_arg.remote())
 
             return s1 + s2
@@ -1255,6 +1255,19 @@ def test_actor_class_method(ray_start_regular_shared):
             cls.counter = 6
             return True
         
+        @classmethod
+        def p(cls):
+            return cls.counter
+        
+
+    @ray.remote
+    class Child(Parent):
+
+        counter = 5
+
+        def double_arg(self):
+            return self.arg * 4 + self.counter
+        
         
         # @classmethod
         # def testing2(cls):
@@ -1264,7 +1277,7 @@ def test_actor_class_method(ray_start_regular_shared):
 
     # tester = Parent.remote(5)
     # assert ray.get(tester.doubl_arg.remote()) == 15
-    # p1 = Parent.remote(1)
+    
     # p2 = Parent.remote(2)
     # Parent.counter = 7
     # s1 = ray.get(p1.double_arg.remote())
@@ -1273,10 +1286,14 @@ def test_actor_class_method(ray_start_regular_shared):
     # assert s1 + s2 == 20
 
     
-    assert ray.get(Parent.t.remote()) == True
+    # assert ray.get(Parent.t.remote()) == True
     # assert ray._private.worker.global_worker.function_actor_manager.get_actor_class_attributes(Parent.__ray_metadata__.class_id) == 1
-    assert Parent.counter == 5
-    assert ray.get(Parent.testing.remote(1)) == 10
+    # assert Parent.counter == 6
+    assert ray.get(Child.testing.remote(1)) == 17
+    assert Parent.counter == 6
+    p1 = Parent.remote(1)
+    assert ray.get(p1.double_arg.remote()) == 8
+
     # Parent.counter = 10
     # ray.get(t.remote())
     # Parent.counter = 10

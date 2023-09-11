@@ -343,10 +343,6 @@ cdef class ActorClassID(UniqueID):
     cdef CActorClassID native(self):
         return <CActorClassID>self.data
 
-    @classmethod
-    def from_random(cls):
-        return cls(os.urandom(28))
-
 # This type alias is for backward compatibility.
 ObjectID = ObjectRef
 

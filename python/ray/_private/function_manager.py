@@ -594,7 +594,7 @@ class FunctionActorManager:
             time.sleep(0.001)
 
     def export_actor_class(
-        self, Class, actor_creation_function_descriptor, actor_method_names, underlying_class = None
+        self, Class, actor_creation_function_descriptor, actor_method_names, class_id
     ):
         if self._worker.load_code_from_local:
             module_name, class_name = (
@@ -632,11 +632,11 @@ class FunctionActorManager:
         )
 
 
-        if underlying_class is not None:
-            serialized_underlying = pickle_dumps(
-                underlying_class,
-                f"Could not serialize underlying class",
-            )
+        # if underlying_class is not None:
+        #     serialized_underlying = pickle_dumps(
+        #         underlying_class,
+        #         f"Could not serialize underlying class",
+        #     )
         actor_class_info = {
             "class_name": actor_creation_function_descriptor.class_name.split(".")[-1],
             "module": actor_creation_function_descriptor.module_name,
@@ -644,6 +644,7 @@ class FunctionActorManager:
             "job_id": job_id.binary(),
             "collision_identifier": self.compute_collision_identifier(Class),
             "actor_method_names": json.dumps(list(actor_method_names)),
+            "class_id": class_id.binary(),
         }
 
         check_oversized_function(
@@ -794,6 +795,8 @@ class FunctionActorManager:
 
     def export_actor_class_attributes(self, class_attributes, class_id):
 
+        print("EXPORRRTTTTIIINNNG")
+
         if self._worker.load_code_from_local:
             return
         
@@ -824,7 +827,25 @@ class FunctionActorManager:
 
         return attributes
     
+    def get_actor_class_attributes_internal(self, class_id):
+
+        if self._worker.load_code_from_local:
+            return
+        
+        key = make_attribute_table_key(
+            b"ClassAttributes",
+            class_id,
+        )
+
+        vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
+
+        attributes = pickle.loads(vals)
+
+        return attributes
+    
     def class_attributes_exported(self, class_id):
+
+        print("CHECCCKCINGNGGNG EXPORT", class_id)
 
         if self._worker.load_code_from_local:
             return
@@ -834,7 +855,10 @@ class FunctionActorManager:
             class_id.binary(),
         )
 
-        return self._worker.gcs_client.internal_kv_exists(key, KV_NAMESPACE_FUNCTION_TABLE)
+        exists = self._worker.gcs_client.internal_kv_exists(key, KV_NAMESPACE_FUNCTION_TABLE)
+        print("AFTER CHECCCKCINGNGGNG EXPORT", class_id)
+
+        return exists
 
 
     def _load_actor_class_from_local(self, actor_creation_function_descriptor):
@@ -883,12 +907,12 @@ class FunctionActorManager:
 
         # Fetch raw data from GCS.
         vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
-        fields = ["job_id", "class_name", "module", "class", "actor_method_names"]
+        fields = ["job_id", "class_name", "module", "class", "actor_method_names", "class_id"]
         if vals is None:
             vals = {}
         else:
             vals = pickle.loads(vals)
-        (job_id_str, class_name, module, pickled_class, actor_method_names) = (
+        (job_id_str, class_name, module, pickled_class, actor_method_names, class_id) = (
             vals.get(field) for field in fields
         )
 
@@ -914,6 +938,10 @@ class FunctionActorManager:
             actor_class = self._create_fake_actor_class(
                 class_name, actor_method_names, traceback_str
             )
+
+        attributes = self.get_actor_class_attributes_internal(class_id)
+        for k, v in attributes.items():
+            setattr(actor_class, k, v)
 
         # The below line is necessary. Because in the driver process,
         # if the function is defined in the file where the python script

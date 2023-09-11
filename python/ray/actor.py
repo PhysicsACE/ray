@@ -889,23 +889,34 @@ class ActorClass:
             ), "Cross language ActorClass cannot be executed locally."
 
         # Export the actor.
-        if not meta.is_cross_language and (
-            meta.last_export_session_and_job != worker.current_session_and_job or meta.class_updated
-        ):
+        if not meta.is_cross_language:
             # If this actor class was not exported in this session and job,
             # we need to export this function again, because current GCS
             # doesn't have it.
             meta.last_export_session_and_job = worker.current_session_and_job
-            meta.class_updated = False
+            # meta.class_updated = False
             # After serialize / deserialize modified class, the __module__
             # of modified class will be ray.cloudpickle.cloudpickle.
             # So, here pass actor_creation_function_descriptor to make
             # sure export actor class correct.
+
+            if not worker.function_actor_manager.class_attributes_exported(meta.class_id):
+                worker.function_actor_manager.export_actor_class_attributes(
+                    meta.method_meta.class_attributes,
+                    meta.class_id,
+                )
+            #     attributes = meta.method_meta.class_attributes
+            # else:
+            #     attributes = worker.function_actor_manager.get_actor_class_attributes(meta.class_id)
+
+            # for k, v in attributes.items():
+            #     setattr(meta.modified_class, k, v)
+
             worker.function_actor_manager.export_actor_class(
                 meta.modified_class,
                 meta.actor_creation_function_descriptor,
                 meta.method_meta.methods.keys(),
-                meta.modified_class.__ray_actor_class__,
+                meta.class_id,
             )
 
         resources = ray._private.utils.resources_from_ray_options(actor_options)
@@ -1210,6 +1221,12 @@ class ActorClass:
 
         id, method = self.classmethods[method_name]
         meta = self.__ray_metadata__
+
+        if not worker.function_actor_manager.class_attributes_exported(meta.class_id):
+            worker.function_actor_manager.export_actor_class_attributes(
+                meta.method_meta.class_attributes,
+                meta.class_id,
+            )
         
         worker.function_actor_manager.preload_class_methods((method_name, id, method),
                                                             function_descriptor)
@@ -1219,7 +1236,7 @@ class ActorClass:
                 meta.modified_class,
                 meta.actor_creation_function_descriptor,
                 meta.method_meta.methods.keys(),
-                meta.modified_class.__ray_actor_class__,
+                meta.class_id,
             )
         
 
@@ -1325,7 +1342,7 @@ class ActorClass:
                 meta.modified_class,
                 meta.actor_creation_function_descriptor,
                 meta.method_meta.methods.keys(),
-                meta.modified_class.__ray_actor_class__,
+                meta.class_id,
             )
 
             key = worker.function_actor_manager.get_actor_class_key(
@@ -1433,6 +1450,7 @@ class ActorClass:
                     return getattr(metadata.modified_class.__ray_actor_class__, name)
 
                 attributes = worker.function_actor_manager.get_actor_class_attributes(metadata.class_id)
+                print("RECEIVED", attributes)
 
                 return attributes[name]
             
@@ -1458,10 +1476,12 @@ class ActorClass:
                 else:
                     attributes = worker.function_actor_manager.get_actor_class_attributes(meta.class_id)
 
+                print("SETTING RECEIVED", attributes)
+
                 attributes[name] = value
 
                 worker.function_actor_manager.export_actor_class_attributes(
-                    meta.method_meta.class_attributes,
+                    attributes,
                     meta.class_id,
                 )
             
