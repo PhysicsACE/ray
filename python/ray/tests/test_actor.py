@@ -14,6 +14,7 @@ from ray._private.test_utils import (
     client_test_enabled,
     wait_for_condition,
     wait_for_pid_to_exit,
+    is_placement_group_removed,
 )
 from ray.actor import ActorClassInheritanceException
 from ray.tests.client_test_utils import create_remote_signal_actor
