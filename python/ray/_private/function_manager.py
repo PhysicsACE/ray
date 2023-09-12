@@ -122,11 +122,6 @@ class FunctionActorManager:
         return self._num_task_executions[function_id]
     
     def get_actor_class_key(self, job_id, actor_creation_function_descriptor, class_id):
-        # key = make_function_table_key(
-        #     b"ActorClass",
-        #     job_id,
-        #     actor_creation_function_descriptor.function_id.binary(),
-        # )
 
         return b":".join([b"ActorClass", job_id.hex().encode(), actor_creation_function_descriptor.function_id.binary(), class_id.binary()])
     
@@ -795,8 +790,6 @@ class FunctionActorManager:
 
     def export_actor_class_attributes(self, class_attributes, class_id):
 
-        print("EXPORRRTTTTIIINNNG")
-
         if self._worker.load_code_from_local:
             return
         
@@ -845,8 +838,6 @@ class FunctionActorManager:
     
     def class_attributes_exported(self, class_id):
 
-        print("CHECCCKCINGNGGNG EXPORT", class_id)
-
         if self._worker.load_code_from_local:
             return
         
@@ -856,7 +847,6 @@ class FunctionActorManager:
         )
 
         exists = self._worker.gcs_client.internal_kv_exists(key, KV_NAMESPACE_FUNCTION_TABLE)
-        print("AFTER CHECCCKCINGNGGNG EXPORT", class_id)
 
         return exists
 

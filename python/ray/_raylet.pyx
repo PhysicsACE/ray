@@ -3527,8 +3527,7 @@ cdef class CoreWorker:
                                          method_meta.num_returns,
                                          actor_method_cpu,
                                          actor_creation_function_descriptor,
-                                         worker.current_session_and_job,
-                                         actor_class=actor_class)
+                                         worker.current_session_and_job)
         else:
             return ray.actor.ActorHandle(language, actor_id,
                                          {},  # method decorators

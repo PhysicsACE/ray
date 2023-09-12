@@ -375,7 +375,6 @@ class _ActorClassMetadata:
         self.concurrency_groups = concurrency_groups
         self.scheduling_strategy = scheduling_strategy
         self.last_export_session_and_job = None
-        self.class_updated = False
         self.method_meta = _ActorClassMethodMetadata.create(
             modified_class, actor_creation_function_descriptor
         )
@@ -545,13 +544,6 @@ class ActorClass:
                                              method_descriptor.__func__)
                 setattr(self, method_name, method)
 
-
-        # meta = self.__ray_metadata__
-
-        # worker.function_actor_manager.export_actor_class_attributes(
-        #     meta.method_meta.class_attributes,
-        #     meta.class_id,
-        # )
 
         return self
 
@@ -889,12 +881,14 @@ class ActorClass:
             ), "Cross language ActorClass cannot be executed locally."
 
         # Export the actor.
-        if not meta.is_cross_language:
+        if not meta.is_cross_language and (
+            meta.last_export_session_and_job != worker.current_session_and_job
+        ):
             # If this actor class was not exported in this session and job,
             # we need to export this function again, because current GCS
             # doesn't have it.
             meta.last_export_session_and_job = worker.current_session_and_job
-            # meta.class_updated = False
+
             # After serialize / deserialize modified class, the __module__
             # of modified class will be ray.cloudpickle.cloudpickle.
             # So, here pass actor_creation_function_descriptor to make
@@ -905,12 +899,6 @@ class ActorClass:
                     meta.method_meta.class_attributes,
                     meta.class_id,
                 )
-            #     attributes = meta.method_meta.class_attributes
-            # else:
-            #     attributes = worker.function_actor_manager.get_actor_class_attributes(meta.class_id)
-
-            # for k, v in attributes.items():
-            #     setattr(meta.modified_class, k, v)
 
             worker.function_actor_manager.export_actor_class(
                 meta.modified_class,
@@ -1071,7 +1059,6 @@ class ActorClass:
             meta.actor_creation_function_descriptor,
             worker.current_session_and_job,
             original_handle=True,
-            actor_class=self,
         )
 
         return actor_handle
@@ -1215,9 +1202,6 @@ class ActorClass:
 
         function_descriptor = self._ray_function_descriptor[method_name]
 
-        # print("DICCCTTTTTT", self.__dict__)
-        # print("SECCCCONNNDDD", self.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
-        # print("CLADD ATTRIBUTES", self.__ray_metadata__.method_meta.class_attributes)
 
         id, method = self.classmethods[method_name]
         meta = self.__ray_metadata__
@@ -1240,10 +1224,10 @@ class ActorClass:
             )
         
 
-        # if worker.mode == ray.LOCAL_MODE:
-        #     assert (
-        #         not self._ray_is_cross_language
-        #     ), "Cross language remote actor method cannot be executed locally."
+        if worker.mode == ray.LOCAL_MODE:
+            assert (
+                not self._ray_is_cross_language
+            ), "Cross language remote classmethod cannot be executed locally."
 
 
         object_refs = worker.core_worker.submit_task(
@@ -1286,39 +1270,6 @@ class ActorClass:
             self.__ray_metadata__.modified_class, args, kwargs, self._default_options
         )
     
-    # def __getattr__(self, item):
-    #     if not self._ray_is_cross_language:
-    #         raise AttributeError(
-    #             f"'{type(self).__name__}' object has " f"no attribute '{item}'"
-    #         )
-    #     if item in ["__ray_terminate__"]:
-
-    #         class FakeActorMethod(object):
-    #             def __call__(self, *args, **kwargs):
-    #                 raise TypeError(
-    #                     "Actor methods cannot be called directly. Instead "
-    #                     "of running 'object.{}()', try 'object.{}.remote()'.".format(
-    #                         item, item
-    #                     )
-    #                 )
-
-    #             def remote(self, *args, **kwargs):
-    #                 logger.warning(
-    #                     f"Actor method {item} is not supported by cross language."
-    #                 )
-
-    #         return FakeActorMethod()
-
-    #     return ActorMethod(
-    #         self,
-    #         item,
-    #         ray_constants.
-    #         # Currently, we use default num returns
-    #         DEFAULT_ACTOR_METHOD_NUM_RETURN_VALS,
-    #         # Currently, cross-lang actor method not support decorator
-    #         decorator=None,
-    #     )
-    
     def _serialization_helper(self):
         """This is defined in order to make pickling work.
 
@@ -1351,9 +1302,8 @@ class ActorClass:
                 meta.class_id,
             )
 
-
-            # return json.dumps(data)
             return key
+        
         else:
             # Local mode
             state = (
@@ -1388,19 +1338,7 @@ class ActorClass:
 
         if hasattr(worker, "core_worker"):
             # Non-local mode
-            # data = json.loads(serialized)
-            # job_id = ray._raylet.JobID.from_int(data["job_id"])
-            # function_id = data["function_id"].encode()
-
-            # metadata = pickle.loads(serialized)
-            # key = metadata["key"]
-            # class_id = ["class_id"]
-            # key, class_id = serialized
-            # class_id = ActorClassID(bclass_id)
-            # print("Serialized", serialized)
-            # actor_class = worker.function_actor_manager._deserialize_actor_class_from_gcs(job_id, function_id)
             split = serialized.split(b":")
-            print("SPLLIITITIT", split)
             class_id = ActorClassID.from_binary(split[3])
             kv_key = [split[0], split[1], split[2]]
             gcs_key = b":".join(kv_key)
@@ -1426,7 +1364,7 @@ class ActorClass:
         serialized, class_id = self._serialization_helper()
         # There is no outer object ref when the actor handle is
         # deserialized out-of-band using pickle.
-        return ActorClass._deserialization_helper, (serialized, class_id,)
+        return ActorClass._deserialization_helper, (serialized,)
     
     def __getattribute__(self, name: str) -> Any:
 
@@ -1450,7 +1388,6 @@ class ActorClass:
                     return getattr(metadata.modified_class.__ray_actor_class__, name)
 
                 attributes = worker.function_actor_manager.get_actor_class_attributes(metadata.class_id)
-                print("RECEIVED", attributes)
 
                 return attributes[name]
             
@@ -1475,8 +1412,6 @@ class ActorClass:
                     attributes = meta.method_meta.class_attributes
                 else:
                     attributes = worker.function_actor_manager.get_actor_class_attributes(meta.class_id)
-
-                print("SETTING RECEIVED", attributes)
 
                 attributes[name] = value
 
@@ -1530,7 +1465,6 @@ class ActorHandle:
         actor_creation_function_descriptor,
         session_and_job,
         original_handle=False,
-        actor_class=None,
     ):
         self._ray_actor_language = language
         self._ray_actor_id = actor_id
@@ -1545,10 +1479,6 @@ class ActorHandle:
             actor_creation_function_descriptor
         )
         self._ray_function_descriptor = {}
-        if isinstance(actor_class, ActorClass):
-            self._actor_class = actor_class
-        else:
-            self._actor_class = ActorClass._ray_from_modified_class(actor_class, ActorClassID.from_random(), {})
 
         if not self._ray_is_cross_language:
             assert isinstance(
@@ -1642,13 +1572,7 @@ class ActorHandle:
             else:
                 list_args = signature.flatten_args(function_signature, args, kwargs)
 
-            if method_name in self._actor_class.classmethods:
-                list_args.insert(0, self._actor_class)
-                list_args.insert(0, b"__RAY_DUMMY__")
-
             function_descriptor = self._ray_function_descriptor[method_name]
-        
-        # print("SECCCCONNNDDD", self._actor_class.__ray_metadata__.modified_class.__ray_actor_class__.__dict__)
 
         if worker.mode == ray.LOCAL_MODE:
             assert (
