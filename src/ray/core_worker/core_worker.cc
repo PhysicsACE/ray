@@ -2216,12 +2216,7 @@ void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placem
 
 void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id) {
   ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
-  auto callback = [this, placement_group_id](
-    const ObjectID &object_id
-  ) {
-    boost::bind(RemovePlacementGroup, placement_group_id);
-  };
-  reference_counter_->SetDeleteCallback(pg_handle_id, callback);
+  return;
 }
 
 Status CoreWorker::SubmitActorTask(const ActorID &actor_id,

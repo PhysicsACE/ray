@@ -427,13 +427,6 @@ void ReferenceCounter::RemovePlacementRequiredReference(const ObjectID &placemen
   auto it = object_id_refs_.find(placement_id);
   RAY_CHECK(it->second.mutable_required()->required.erase(object_id));
 
-  if (it->second.OutOfScope(lineage_pinning_enabled_)) {
-    if (it->second.on_delete) {
-      it->second.on_delete(it->first);
-      it->second.on_delete = nullptr;
-    }
-  }
-
 }
 
 void ReferenceCounter::RemoveLocalReference(const ObjectID &object_id,
