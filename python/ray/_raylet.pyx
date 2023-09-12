@@ -1334,7 +1334,6 @@ cdef void execute_task(
     else:
         actor_id = core_worker.get_actor_id()
         actor = worker.actors[actor_id]
-        print(actor.__ray_actor_class__.__dict__)
         class_name = actor.__class__.__name__
         next_title = f"ray::{class_name}"
 
