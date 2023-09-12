@@ -2219,7 +2219,7 @@ void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id
   auto callback = [this, placement_group_id](
     const ObjectID &object_id
   ) {
-    RemovePlacementGroup(placement_group_id);
+    boost::bind(RemovePlacementGroup, placement_group_id);
   };
   reference_counter_->SetDeleteCallback(pg_handle_id, callback);
 }
