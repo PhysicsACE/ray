@@ -626,12 +626,6 @@ class FunctionActorManager:
             f"{actor_creation_function_descriptor.repr}",
         )
 
-
-        # if underlying_class is not None:
-        #     serialized_underlying = pickle_dumps(
-        #         underlying_class,
-        #         f"Could not serialize underlying class",
-        #     )
         actor_class_info = {
             "class_name": actor_creation_function_descriptor.class_name.split(".")[-1],
             "module": actor_creation_function_descriptor.module_name,
@@ -653,8 +647,6 @@ class FunctionActorManager:
             key, pickle.dumps(actor_class_info), True, KV_NAMESPACE_FUNCTION_TABLE
         )
 
-        # if key_callback is not None:
-        #     key_callback(key)
 
         # TODO(rkn): Currently we allow actor classes to be defined
         # within tasks. I tried to disable this, but it may be necessary
@@ -942,14 +934,9 @@ class FunctionActorManager:
         # actor_class.__ray_actor_class__ = ray_actor_class
         return actor_class
     
-    # job_id, function_id
+    # key
     def _deserialize_actor_class_from_gcs(self, key):
         """Load actor class from GCS."""
-        # key = make_function_table_key(
-        #     b"ActorClass",
-        #     job_id,
-        #     function_id,
-        # )
 
         # Fetch raw data from GCS.
         vals = self._worker.gcs_client.internal_kv_get(key, KV_NAMESPACE_FUNCTION_TABLE)
