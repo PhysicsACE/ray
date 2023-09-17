@@ -148,6 +148,18 @@ rpc::PlacementGroupStats *GcsPlacementGroup::GetMutableStats() {
   return placement_group_table_data_.mutable_stats();
 }
 
+WorkerID GcsPlacementGroup::GetOwnerID() const {
+  return WorkerID::FromBinary(GetOwnerAddress().worker_id());
+}
+
+NodeID GcsPlacementGroup::GetOwnerNodeID() const {
+  return NodeID::FromBinary(GetOwnerAddress().raylet_id());
+}
+
+const rpc::Address &GcsPlacementGroup::GetOwnerAddress() const {
+  return placement_group_table_data_.owner_address();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 GcsPlacementGroupManager::GcsPlacementGroupManager(
@@ -155,11 +167,13 @@ GcsPlacementGroupManager::GcsPlacementGroupManager(
     std::shared_ptr<GcsPlacementGroupSchedulerInterface> scheduler,
     std::shared_ptr<gcs::GcsTableStorage> gcs_table_storage,
     GcsResourceManager &gcs_resource_manager,
-    std::function<std::string(const JobID &)> get_ray_namespace)
+    std::function<std::string(const JobID &)> get_ray_namespace,
+    const rpc::ClientFactoryFn &worker_client_factory)
     : io_context_(io_context),
       gcs_placement_group_scheduler_(std::move(scheduler)),
       gcs_table_storage_(std::move(gcs_table_storage)),
       gcs_resource_manager_(gcs_resource_manager),
+      worker_client_factory_(worker_client_factory),
       get_ray_namespace_(get_ray_namespace) {
   placement_group_state_counter_.reset(
       new CounterMap<rpc::PlacementGroupTableData::PlacementGroupState>());
@@ -709,6 +723,53 @@ void GcsPlacementGroupManager::WaitPlacementGroup(
     placement_group_to_create_callbacks_[placement_group_id].emplace_back(
         std::move(callback));
   }
+}
+
+void GcsPlacementGroupManager::PollOwnerForPlacementGroupOutOfScope(
+  const std::shared_ptr<GcsPlacementGroup> &placement_group) {
+    const auto &placement_group_id = placement_group->GetPlacementGroupID();
+    const auto &owner_node_id = placement_group->GetOwnerNodeID();
+    const auto &owner_id = placement_group->GetOwnerID();
+    auto &workers = owners_[owner_node_id];
+    auto it = workers.find(owner_id);
+    if (it == workers.end()) {
+      std::shared_ptr<rpc::CoreWorkerClientInterface> client =
+          worker_client_factory_(placement_group->GetOwnerAddress());
+      it = workers.emplace(owner_id, Owner(std::move(client))).first;
+    }
+
+    it->second.children_placement_groups.insert(placement_group_id);
+
+    rpc::WaitForPlacementGroupOutOfScopeRequest wait_request;
+    wait_request.set_intended_worker_id(owner_id.Binary());
+    wait_request.set_placement_group_id(placement_group_id.Binary());
+    it->second.client->WaitForPlacementGroupOutOfScope(
+      wait_request, [this, owner_node_id, owner_id, placement_group_id](
+        Status status, const rpc::WaitForPlacementGroupOutOfScopeReply &reply) {
+          if (!status.ok()) {
+            RAY_LOG(INFO) << "Worker" << owner_id << " failed to clean up placement group";
+          }
+
+          auto node_it = owners_.find(owner_node_id);
+          if (node_it != owners_.end() && node_it->second.count(owner_id)) {
+            RemovePlacementGroup(placement_group_id,
+                                 [placement_group_id](Status status) {
+                                  if (status.ok()) {
+                                    RAY_LOG(INFO)
+                                        << "Placement group of an id, " << placement_group_id
+                                        << " is removed successfully.";
+                                  } else {
+                                    RAY_LOG(WARNING)
+                                        << "Failed to remove the placement group "
+                                        << placement_group_id
+                                        << " due to a RPC failure, status:" << status.ToString();
+                                  }
+                                });
+          }
+      }
+    );
+
+    return;
 }
 
 void GcsPlacementGroupManager::AddToPendingQueue(

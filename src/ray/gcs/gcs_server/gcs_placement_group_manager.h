@@ -86,6 +86,7 @@ class GcsPlacementGroup {
     placement_group_table_data_.set_ray_namespace(ray_namespace);
     placement_group_table_data_.set_placement_group_creation_timestamp_ms(
         current_sys_time_ms());
+    placement_group_table_data_.mutable_owner_address()->CopyFrom(placement_group_spec.caller_address());
     SetupStates();
   }
 
@@ -163,6 +164,13 @@ class GcsPlacementGroup {
 
   rpc::PlacementGroupStats *GetMutableStats();
 
+  // Get the placement groups's owner ID.
+  WorkerID GetOwnerID() const;
+  // Get the node ID of the placement groups's owner.
+  NodeID GetOwnerNodeID() const;
+  // Get the address of the placement group's owner
+  const rpc::Address &GetOwnerAddress() const;
+
  private:
   FRIEND_TEST(GcsPlacementGroupManagerTest, TestPlacementGroupBundleCache);
 
@@ -235,7 +243,8 @@ class GcsPlacementGroupManager : public rpc::PlacementGroupInfoHandler {
                            std::shared_ptr<GcsPlacementGroupSchedulerInterface> scheduler,
                            std::shared_ptr<gcs::GcsTableStorage> gcs_table_storage,
                            GcsResourceManager &gcs_resource_manager,
-                           std::function<std::string(const JobID &)> get_ray_namespace);
+                           std::function<std::string(const JobID &)> get_ray_namespace,
+                           const rpc::ClientFactoryFn &worker_client_factory);
 
   ~GcsPlacementGroupManager() = default;
 
@@ -399,6 +408,20 @@ class GcsPlacementGroupManager : public rpc::PlacementGroupInfoHandler {
                                     GcsResourceManager &gcs_resource_manager);
 
  private:
+
+  struct Owner {
+    Owner(std::shared_ptr<rpc::CoreWorkerClientInterface> client)
+        : client(std::move(client)) {}
+
+    std::shared_ptr<rpc::CoreWorkerClientInterface> client;
+
+    absl::flat_hash_set<PlacementGroupID> children_placement_groups;
+  };
+
+  // Poll the owner for the specifiec placement group to receive a notification 
+  // when the placement group goes out of scope. 
+  void PollOwnerForPlacementGroupOutOfScope(const std::shared_ptr<GcsPlacementGroup> &placement_group);
+
   /// Push a placement group to pending queue.
   ///
   /// \param pg The placementgroup we are adding
@@ -510,6 +533,10 @@ class GcsPlacementGroupManager : public rpc::PlacementGroupInfoHandler {
 
   /// Total number of successfully created placement groups in the cluster lifetime.
   int64_t lifetime_num_placement_groups_created_ = 0;
+
+  absl::flat_hash_map<NodeID, absl::flat_hash_map<WorkerID, Owner>> owners_;
+
+  rpc::ClientFactoryFn worker_client_factory_;
 
   // Debug info.
   enum CountType {

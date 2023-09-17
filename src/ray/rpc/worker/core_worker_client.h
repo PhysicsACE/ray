@@ -144,6 +144,10 @@ class CoreWorkerClientInterface : public pubsub::SubscriberClientInterface {
       const WaitForActorOutOfScopeRequest &request,
       const ClientCallback<WaitForActorOutOfScopeReply> &callback) {}
 
+  virtual void WaitForPlacementGroupOutOfScope(
+    const WaitForPlacementGroupOutOfScopeRequest &request,
+    const ClientCallback<WaitForPlacementGroupOutOfScopeReply> &callback) {}
+
   /// Send a long polling request to a core worker for pubsub operations.
   virtual void PubsubLongPolling(const PubsubLongPollingRequest &request,
                                  const ClientCallback<PubsubLongPollingReply> &callback) {
@@ -268,6 +272,12 @@ class CoreWorkerClient : public std::enable_shared_from_this<CoreWorkerClient>,
                          WaitForActorOutOfScope,
                          grpc_client_,
                          /*method_timeout_ms*/ -1,
+                         override)
+
+  VOID_RPC_CLIENT_METHOD(CoreWorkerService,
+                         WaitForPlacementGroupOutOfScope,
+                         grpc_client_,
+                         -1,
                          override)
 
   VOID_RPC_CLIENT_METHOD(CoreWorkerService,

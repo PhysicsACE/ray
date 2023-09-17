@@ -507,6 +507,9 @@ void GcsServer::InitGcsPlacementGroupManager(const GcsInitData &gcs_init_data) {
       *gcs_resource_manager_,
       [this](const JobID &job_id) {
         return gcs_job_manager_->GetJobConfig(job_id)->ray_namespace();
+      },
+      [this](const rpc::Address &address) {
+        return std::make_shared<rpc::CoreWorkerClient>(address, client_call_manager_);
       });
   // Initialize by gcs tables data.
   gcs_placement_group_manager_->Initialize(gcs_init_data);

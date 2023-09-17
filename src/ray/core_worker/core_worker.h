@@ -1115,6 +1115,11 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
                                     rpc::WaitForActorOutOfScopeReply *reply,
                                     rpc::SendReplyCallback send_reply_callback) override;
 
+  /// Implements gRPC server handler.
+  void HandleWaitForPlacementGroupOutOfScope(rpc::WaitForPlacementGroupOutOfScopeRequest request,
+                                             rpc::WaitForPlacementGroupOutOfScopeReply *reply,
+                                             rpc::SendReplyCallback send_reply_callback) override;
+
   // Implements gRPC server handler.
   void HandlePubsubLongPolling(rpc::PubsubLongPollingRequest request,
                                rpc::PubsubLongPollingReply *reply,

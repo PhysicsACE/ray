@@ -2112,7 +2112,8 @@ Status CoreWorker::CreatePlacementGroup(
       placement_group_creation_options.max_cpu_fraction_per_node,
       worker_context_.GetCurrentJobID(),
       worker_context_.GetCurrentActorID(),
-      worker_context_.CurrentActorDetached());
+      worker_context_.CurrentActorDetached(),
+      rpc_address_);
   PlacementGroupSpecification placement_group_spec = builder.Build();
   *return_placement_group_id = placement_group_id;
   RAY_LOG(INFO) << "Submitting Placement Group creation to GCS: " << placement_group_id;
@@ -3224,6 +3225,25 @@ void CoreWorker::HandleWaitForActorOutOfScope(
     RAY_LOG(DEBUG) << "Received HandleWaitForActorOutOfScope for " << actor_id;
     actor_manager_->WaitForActorOutOfScope(actor_id, std::move(respond));
   }
+}
+
+void CoreWorker::HandleWaitForPlacementGroupOutOfScope(
+  rpc::WaitForPlacementGroupOutOfScopeRequest request,
+  rpc::WaitForPlacementGroupOutOfScopeReply *reply,
+  rpc::SendReplyCallback send_reply_callback) {
+
+    if (HandleWrongRecipient(WorkerID::FromBinary(request.intended_worker_id()),
+                           send_reply_callback)) {
+      return;
+    }
+
+    auto respond = [send_reply_callback](const PlacementGroupID &actor_id) {
+      RAY_LOG(DEBUG) << "Replying to HandleWaitForActorOutOfScope for " << actor_id;
+      send_reply_callback(Status::OK(), nullptr, nullptr);
+    };
+
+    const auto placement_group_id = PlacementGroupID::FromBinary(request.placement_group_id());
+    respond(placement_group_id);
 }
 
 void CoreWorker::ProcessSubscribeForObjectEviction(

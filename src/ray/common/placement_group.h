@@ -87,7 +87,8 @@ class PlacementGroupSpecBuilder {
       double max_cpu_fraction_per_node,
       const JobID &creator_job_id,
       const ActorID &creator_actor_id,
-      bool is_creator_detached_actor) {
+      bool is_creator_detached_actor,
+      const rpc::Address &caller_address) {
     message_->set_placement_group_id(placement_group_id.Binary());
     message_->set_name(name);
     message_->set_strategy(strategy);
@@ -103,6 +104,7 @@ class PlacementGroupSpecBuilder {
     message_->set_creator_actor_dead(creator_actor_id.IsNil());
     message_->set_is_detached(is_detached);
     message_->set_max_cpu_fraction_per_node(max_cpu_fraction_per_node);
+    message_->mutable_caller_address()->CopyFrom(caller_address);
 
     for (size_t i = 0; i < bundles.size(); i++) {
       auto resources = bundles[i];

@@ -554,6 +554,8 @@ message PlacementGroupSpec {
   bool is_detached = 9;
   // The maximum fraction of CPU cores that this placement group can use on each node.
   double max_cpu_fraction_per_node = 10;
+  // The address/owner of the placement group
+  Address caller_address = 11;
 }
 
 message ObjectReference {
