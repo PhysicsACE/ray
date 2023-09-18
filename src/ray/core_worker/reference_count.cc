@@ -427,6 +427,11 @@ void ReferenceCounter::RemovePlacementRequiredReference(const ObjectID &placemen
   auto it = object_id_refs_.find(placement_id);
   RAY_CHECK(it->second.mutable_required()->required.erase(object_id));
 
+  if (it->second.local_ref_count == 0) {
+    it->second.on_delete(it->first);
+    it->second.on_delete = nullptr;
+  }
+
 }
 
 void ReferenceCounter::RemoveLocalReference(const ObjectID &object_id,
@@ -825,6 +830,20 @@ bool ReferenceCounter::SetDeleteCallback(
   // again.
   it->second.on_delete = callback;
   return true;
+}
+
+bool ReferenceCounter::SetTempDeleteCallback(
+    const ObjectID &object_id, const std::function<void(const ObjectID &)> callback) {
+
+  absl::MutexLock lock(&mutex_);
+  auto it = object_id_refs_.find(object_id);
+  if (it == object_id_refs_.end()) {
+    return false;
+  } 
+
+  it->second.on_delete = callback;
+  return true;
+
 }
 
 void ReferenceCounter::ResetObjectsOnRemovedNode(const NodeID &raylet_id) {

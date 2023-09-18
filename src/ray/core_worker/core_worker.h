@@ -923,6 +923,9 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   /// \param[in] placement_group_id The placement group ID to decrese the borrowed ref for
   void RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id, const ActorID &actor_id);
 
+  void WaitForPlacementGroupOutOfScope(const PlacementGroupID &placement_group_id,
+                                       std::function<void(const PlacementGroupID &)> pg_out_of_scope_callback);
+
   /// Submit an actor task.
   ///
   /// \param[in] caller_id ID of the task submitter.

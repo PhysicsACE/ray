@@ -1963,6 +1963,17 @@ Status CoreWorker::CreateActor(const RayFunction &function,
                                   actor_creation_options.scheduling_strategy);
   auto new_resource = AddPlacementGroupConstraint(
       actor_creation_options.resources, actor_creation_options.scheduling_strategy);
+
+  auto placement_group_id = PlacementGroupID::Nil();
+  if (actor_creation_options.scheduling_strategy.scheduling_strategy_case() ==
+      rpc::SchedulingStrategy::SchedulingStrategyCase::kPlacementGroupSchedulingStrategy) {
+    
+    placement_group_id = PlacementGroupID::FromBinary(
+      actor_creation_options.scheduling_strategy.placement_group_scheduling_strategy().placement_group_id()
+    );
+    AddPlacementRequiredReference(placement_group_id, actor_id);
+  }
+
   const auto actor_name = actor_creation_options.name;
   const auto task_name =
       actor_name.empty()
@@ -2030,6 +2041,11 @@ Status CoreWorker::CreateActor(const RayFunction &function,
       std::move(actor_handle), CurrentCallSite(), rpc_address_, is_detached))
       << "Actor " << actor_id << " already exists";
   *return_actor_id = actor_id;
+
+  if (!placement_group_id.IsNil()) {
+    RAY_CHECK(actor_manager_->AddAssociatedPlacementGroup(actor_id, placement_group_id));
+  }
+
   TaskSpecification task_spec = builder.Build();
   RAY_LOG(DEBUG) << "Submitting actor creation task " << task_spec.DebugString();
   if (options_.is_local_mode) {
@@ -2102,6 +2118,10 @@ Status CoreWorker::CreatePlacementGroup(
     }
   }
   const PlacementGroupID placement_group_id = PlacementGroupID::Of(GetCurrentJobId());
+  // AddLocalPlacementHandleReference(placement_group_id,
+  //                                 CurrentCallSite(),
+  //                                 rpc_address_,
+  //                                 placement_group_creation_options.is_detached);
   PlacementGroupSpecBuilder builder;
   builder.SetPlacementGroupSpec(
       placement_group_id,
@@ -2206,6 +2226,20 @@ void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placem
                                                   const ActorID &actor_id) {
   ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
   reference_counter_->RemovePlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
+}
+
+void CoreWorker::WaitForPlacementGroupOutOfScope(const PlacementGroupID &placement_group_id,
+                                                 std::function<void(const PlacementGroupID &)> pg_out_of_scope_callback) {
+
+  auto callback = [this, placement_group_id, pg_out_of_scope_callback](const ObjectID &object_id) {
+    pg_out_of_scope_callback(placement_group_id);
+  };
+
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  if (!reference_counter_->SetTempDeleteCallback(pg_object_id, callback)) {
+    pg_out_of_scope_callback(placement_group_id);
+  }
+
 }
 
 Status CoreWorker::SubmitActorTask(const ActorID &actor_id,
@@ -3290,7 +3324,7 @@ void CoreWorker::HandleWaitForPlacementGroupOutOfScope(
     };
 
     const auto placement_group_id = PlacementGroupID::FromBinary(request.placement_group_id());
-    respond(placement_group_id);
+    WaitForPlacementGroupOutOfScope(placement_group_id, std::move(respond));
 }
 
 void CoreWorker::ProcessSubscribeForObjectEviction(

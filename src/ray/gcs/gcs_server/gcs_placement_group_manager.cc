@@ -243,6 +243,10 @@ void GcsPlacementGroupManager::RegisterPlacementGroup(
                                        placement_group);
   AddToPendingQueue(placement_group);
 
+  // if (!placement_group->IsDetached()) {
+  //   PollOwnerForPlacementGroupOutOfScope(placement_group);
+  // }
+
   RAY_CHECK_OK(gcs_table_storage_->PlacementGroupTable().Put(
       placement_group_id,
       placement_group->GetPlacementGroupTableData(),

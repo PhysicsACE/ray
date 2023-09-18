@@ -17,6 +17,7 @@ from ray._private.test_utils import (
 )
 from ray.actor import ActorClassInheritanceException, ActorClass
 from ray.tests.client_test_utils import create_remote_signal_actor
+from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 # NOTE: We have to import setproctitle after ray because we bundle setproctitle
 # with ray.
@@ -1225,8 +1226,6 @@ def test_actor_class_method(ray_start_regular_shared):
 
     class Parent:
 
-        
-
         def __init__(self, arg) -> None:
             self.arg = arg
 
@@ -1284,6 +1283,25 @@ def test_actor_class_method(ray_start_regular_shared):
     # s2 = ray.get(p2.double_arg.remote())
 
     # assert s1 + s2 == 20
+
+    # @ray.remote
+    # class Actor:
+    #     def __init__(self):
+    #         pass
+
+    #     def v(self):
+    #         return 10
+
+    # # bundle is placement group reserved resources and can't be used in bundles
+    # # This test is to test the case that even there all resource in the
+    # # bundle got allocated, we are still able to return from ready[I
+    # # since ready use 0 CPU
+    pg = ray.util.placement_group(bundles=[{"CPU": 1}])
+    ray.get(pg.ready())
+    # a = Actor.options(
+    #     num_cpus=1,
+    #     scheduling_strategy=PlacementGroupSchedulingStrategy(placement_group=pg),
+    # ).remote()
 
     
     # assert ray.get(Parent.t.remote()) == True

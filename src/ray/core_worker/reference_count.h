@@ -298,6 +298,10 @@ class ReferenceCounter : public ReferenceCounterInterface,
                          const std::function<void(const ObjectID &)> callback)
       LOCKS_EXCLUDED(mutex_);
 
+  bool SetTempDeleteCallback(const ObjectID &object_id,
+                             const std::function<void(const ObjectID &)> callback)
+      LOCKS_EXCLUDED(mutex_);
+
   void ResetDeleteCallbacks(const std::vector<ObjectID> &object_ids)
       LOCKS_EXCLUDED(mutex_);
 
