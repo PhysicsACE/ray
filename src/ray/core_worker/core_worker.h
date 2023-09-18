@@ -923,6 +923,9 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   /// \param[in] placement_group_id The placement group ID to decrese the borrowed ref for
   void RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id, const ActorID &actor_id);
 
+  void PlacementGroupNotification(const PlacementGroupID &placement_group_id,
+                                       std::function<void(const PlacementGroupID &)> pg_out_of_scope_callback);
+
   /// Return a callback for when the placement group goes out of scope to handle the automatice freeing of reserved
   /// resources corresponding to the respective placement group
   ///
@@ -1162,6 +1165,11 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   void HandleWaitForActorOutOfScope(rpc::WaitForActorOutOfScopeRequest request,
                                     rpc::WaitForActorOutOfScopeReply *reply,
                                     rpc::SendReplyCallback send_reply_callback) override;
+
+  /// Implements gRPC server handler.
+  void HandleWaitForPlacementGroupOutOfScope(rpc::WaitForPlacementGroupOutOfScopeRequest request,
+                                             rpc::WaitForPlacementGroupOutOfScopeReply *reply,
+                                             rpc::SendReplyCallback send_reply_callback) override;
 
   // Implements gRPC server handler.
   void HandlePubsubLongPolling(rpc::PubsubLongPollingRequest request,

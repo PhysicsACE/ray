@@ -186,6 +186,13 @@ message WaitForActorOutOfScopeRequest {
 
 message WaitForActorOutOfScopeReply {}
 
+message WaitForPlacementGroupOutOfScopeRequest {
+  bytes intended_worker_id = 1;
+  bytes placement_group_id = 2;
+}
+
+message WaitForPlacementGroupOutOfScopeReply {}
+
 message UpdateObjectLocationBatchRequest {
   bytes intended_worker_id = 1;
   bytes node_id = 2;
@@ -428,6 +435,8 @@ service CoreWorkerService {
   // actor process, if still alive.
   rpc WaitForActorOutOfScope(WaitForActorOutOfScopeRequest)
       returns (WaitForActorOutOfScopeReply);
+  rpc WaitForPlacementGroupOutOfScope(WaitForPlacementGroupOutOfScopeRequest)
+      returns (WaitForPlacementGroupOutOfScopeReply);
   /// The long polling request sent to the core worker for pubsub operations.
   /// It is replied once there are batch of objects that need to be published to
   /// the caller (subscriber).

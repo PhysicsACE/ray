@@ -2030,7 +2030,9 @@ Status CoreWorker::CreateActor(const RayFunction &function,
   /// that a reference to the handle exists. Here, we add the corresponding placment group id
   /// to the flat hash set for easy access to ensure that when WaitFroActorOutOfScopeRequest is made
   /// by GCS, this actor id has its respective placement group stored for when the actor goes out of scope.
-  RAY_CHECK(actor_manager_->AddAssociatedPlacementGroup(actor_id, placement_group_id));
+  if (!placement_group_id.IsNil()) {
+    RAY_CHECK(actor_manager_->AddAssociatedPlacementGroup(actor_id, placement_group_id));
+  }
   TaskSpecification task_spec = builder.Build();
   RAY_LOG(DEBUG) << "Submitting actor creation task " << task_spec.DebugString();
   if (options_.is_local_mode) {
@@ -2103,6 +2105,10 @@ Status CoreWorker::CreatePlacementGroup(
     }
   }
   const PlacementGroupID placement_group_id = PlacementGroupID::Of(GetCurrentJobId());
+  AddLocalPlacementHandleReference(placement_group_id,
+                                  CurrentCallSite(),
+                                  rpc_address_,
+                                  placement_group_creation_options.is_detached);
   PlacementGroupSpecBuilder builder;
   builder.SetPlacementGroupSpec(
       placement_group_id,
@@ -2113,7 +2119,8 @@ Status CoreWorker::CreatePlacementGroup(
       placement_group_creation_options.max_cpu_fraction_per_node,
       worker_context_.GetCurrentJobID(),
       worker_context_.GetCurrentActorID(),
-      worker_context_.CurrentActorDetached());
+      worker_context_.CurrentActorDetached(),
+      rpc_address_);
   PlacementGroupSpecification placement_group_spec = builder.Build();
   *return_placement_group_id = placement_group_id;
   RAY_LOG(INFO) << "Submitting Placement Group creation to GCS: " << placement_group_id;
@@ -2127,11 +2134,6 @@ Status CoreWorker::CreatePlacementGroup(
               "because GCS server is dead or there's a high load there.";
     return Status::TimedOut(stream.str());
   } else if (status.ok()) {
-    AddLocalPlacementHandleReference(placement_group_id,
-                                  CurrentCallSite(),
-                                  rpc_address_,
-                                  placement_group_creation_options.is_detached);
-
     OutOfScopePGCallback(placement_group_id);
   }
   return status;
@@ -2212,6 +2214,20 @@ void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placem
                                                   const ActorID &actor_id) {
   ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
   reference_counter_->RemovePlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
+}
+
+void CoreWorker::PlacementGroupNotification(const PlacementGroupID &placement_group_id,
+                                                 std::function<void(const PlacementGroupID &)> pg_out_of_scope_callback) {
+
+  auto callback = [this, placement_group_id, pg_out_of_scope_callback](const ObjectID &object_id) {
+    pg_out_of_scope_callback(placement_group_id);
+  };
+
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  if (!reference_counter_->SetTempDeleteCallback(pg_object_id, callback)) {
+    pg_out_of_scope_callback(placement_group_id);
+  }
+
 }
 
 void CoreWorker::OutOfScopePGCallback(const PlacementGroupID &placement_group_id) {
@@ -3279,6 +3295,25 @@ void CoreWorker::HandleWaitForActorOutOfScope(
     RAY_LOG(DEBUG) << "Received HandleWaitForActorOutOfScope for " << actor_id;
     actor_manager_->WaitForActorOutOfScope(actor_id, std::move(respond));
   }
+}
+
+void CoreWorker::HandleWaitForPlacementGroupOutOfScope(
+  rpc::WaitForPlacementGroupOutOfScopeRequest request,
+  rpc::WaitForPlacementGroupOutOfScopeReply *reply,
+  rpc::SendReplyCallback send_reply_callback) {
+
+    if (HandleWrongRecipient(WorkerID::FromBinary(request.intended_worker_id()),
+                           send_reply_callback)) {
+      return;
+    }
+
+    auto respond = [send_reply_callback](const PlacementGroupID &actor_id) {
+      RAY_LOG(DEBUG) << "Replying to HandleWaitForActorOutOfScope for " << actor_id;
+      send_reply_callback(Status::OK(), nullptr, nullptr);
+    };
+
+    const auto placement_group_id = PlacementGroupID::FromBinary(request.placement_group_id());
+    PlacementGroupNotification(placement_group_id, std::move(respond));
 }
 
 void CoreWorker::ProcessSubscribeForObjectEviction(

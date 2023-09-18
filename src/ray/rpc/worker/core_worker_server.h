@@ -37,6 +37,8 @@ namespace rpc {
   RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(CoreWorkerService, GetObjectStatus, -1)    \
   RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(                                           \
       CoreWorkerService, WaitForActorOutOfScope, -1)                                     \
+  RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(                                           \
+      CoreWorkerService, WaitForPlacementGroupOutOfScope, -1)                            \
   RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(CoreWorkerService, PubsubLongPolling, -1)  \
   RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(CoreWorkerService, PubsubCommandBatch, -1) \
   RPC_SERVICE_HANDLER_SERVER_METRICS_DISABLED(                                           \
@@ -66,6 +68,7 @@ namespace rpc {
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(RayletNotifyGCSRestart)         \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(GetObjectStatus)                \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(WaitForActorOutOfScope)         \
+  DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(WaitForPlacementGroupOutOfScope) \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(PubsubLongPolling)              \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(PubsubCommandBatch)             \
   DECLARE_VOID_RPC_SERVICE_HANDLER_METHOD(UpdateObjectLocationBatch)      \
