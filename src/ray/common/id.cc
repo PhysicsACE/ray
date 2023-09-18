@@ -308,8 +308,23 @@ uint32_t JobID::ToInt() {
 PlacementGroupID PlacementGroupID::Of(const JobID &job_id) {
   // No need to set transport type for a random object id.
   // No need to assign put_index/return_index bytes.
-  std::string data(PlacementGroupID::kUniqueBytesLength, 0);
-  FillRandom(&data);
+  // std::string data(PlacementGroupID::kUniqueBytesLength, 0);
+  // FillRandom(&data);
+  // std::copy_n(job_id.Data(), JobID::kLength, std::back_inserter(data));
+  // RAY_CHECK(data.size() == kLength);
+  // return PlacementGroupID::FromBinary(data);
+  size_t length = PlacementGroupID::kUniqueBytesLength;
+  size_t extra_bytes = absl::GetCurrentTimeNanos();
+  SHA256_CTX ctx;
+  sha256_init(&ctx);
+  sha256_update(&ctx, reinterpret_cast<const BYTE *>(job_id.Data()), job_id.Size());
+  if (extra_bytes > 0) {
+    sha256_update(&ctx, (const BYTE *)&extra_bytes, sizeof(extra_bytes));
+  }
+
+  BYTE buff[DIGEST_SIZE];
+  sha256_final(&ctx, buff);
+  auto data = std::string(buff, buff + length);
   std::copy_n(job_id.Data(), JobID::kLength, std::back_inserter(data));
   RAY_CHECK(data.size() == kLength);
   return PlacementGroupID::FromBinary(data);
@@ -319,6 +334,13 @@ JobID PlacementGroupID::JobId() const {
   RAY_CHECK(!IsNil());
   return JobID::FromBinary(std::string(
       reinterpret_cast<const char *>(this->Data() + kUniqueBytesLength), JobID::kLength));
+}
+
+ObjectID PlacementGroupID::GeneratePlacementHandle() const {
+  std::string data(8, 0);
+  FillNil(&data);
+  std::copy_n(this->Data(), 16, std::back_inserter(data));
+  return ObjectID::GenerateObjectId(data, 1);
 }
 
 #define ID_OSTREAM_OPERATOR(id_type)                              \

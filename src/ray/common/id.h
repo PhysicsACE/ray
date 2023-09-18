@@ -319,12 +319,14 @@ class ObjectID : public BaseID<ObjectID> {
   static bool IsActorID(const ObjectID &object_id);
   static ActorID ToActorID(const ObjectID &object_id);
 
-  MSGPACK_DEFINE(id_);
-
- private:
-  /// A helper method to generate an ObjectID.
   static ObjectID GenerateObjectId(const std::string &task_id_binary,
                                    ObjectIDIndexType object_index = 0);
+
+  MSGPACK_DEFINE(id_);
+
+//  private:
+//   /// A helper method to generate an ObjectID.
+  
 
  private:
   uint8_t id_[kLength];
@@ -351,6 +353,8 @@ class PlacementGroupID : public BaseID<PlacementGroupID> {
   static PlacementGroupID Of(const JobID &job_id);
 
   static PlacementGroupID FromRandom() = delete;
+
+  ObjectID GeneratePlacementHandle() const;
 
   /// Constructor of `PlacementGroupID`.
   PlacementGroupID() : BaseID() {}

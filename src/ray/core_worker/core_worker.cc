@@ -1003,12 +1003,12 @@ void CoreWorker::RecordMetrics() {
 std::unordered_map<ObjectID, std::pair<size_t, size_t>>
 CoreWorker::GetAllReferenceCounts() const {
   auto counts = reference_counter_->GetAllReferenceCounts();
-  std::vector<ObjectID> actor_handle_ids = actor_manager_->GetActorHandleIDsFromHandles();
+  // std::vector<ObjectID> actor_handle_ids = actor_manager_->GetActorHandleIDsFromHandles();
   // Strip actor IDs from the ref counts since there is no associated ObjectID
   // in the language frontend.
-  for (const auto &actor_handle_id : actor_handle_ids) {
-    counts.erase(actor_handle_id);
-  }
+  // for (const auto &actor_handle_id : actor_handle_ids) {
+  //   counts.erase(actor_handle_id);
+  // }
   return counts;
 }
 
@@ -2159,6 +2159,53 @@ Status CoreWorker::WaitPlacementGroupReady(const PlacementGroupID &placement_gro
   } else {
     return status;
   }
+}
+
+void CoreWorker::RemovePlacementHandleReference(const PlacementGroupID &placement_id) {
+  ObjectID pg_handle_id = placement_id.GeneratePlacementHandle();
+  reference_counter_->RemoveLocalReference(pg_handle_id, nullptr);
+}
+
+void CoreWorker::AddLocalPlacementHandleReference(const PlacementGroupID &placement_group_id,
+                                                  const std::string &call_site,
+                                                  const rpc::Address &caller_address,
+                                                  bool is_detached) {
+
+  ObjectID pg_handle_id = placement_group_id.GeneratePlacementHandle();
+  if (!is_detached) {
+    reference_counter_->AddOwnedObject(pg_handle_id,
+                                       {},
+                                       caller_address,
+                                       call_site,
+                                       -1,
+                                       true,
+                                       false);
+  }
+
+  // reference_counter_->AddLocalReference(pg_handle_id, call_site);
+
+}
+
+void CoreWorker::AddPlacementOptionReference(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->AddPlacementOptionReference(pg_object_id);
+}
+
+void CoreWorker::RemovePlacementOptionReference(const PlacementGroupID &placement_group_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->DecrementPlacementOptionReference(pg_object_id);
+}
+
+void CoreWorker::AddPlacementRequiredReference(const PlacementGroupID &placement_group_id,
+                                               const ActorID &actor_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->AddPlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
+}
+
+void CoreWorker::RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id,
+                                                  const ActorID &actor_id) {
+  ObjectID pg_object_id = placement_group_id.GeneratePlacementHandle();
+  reference_counter_->RemovePlacementRequiredReference(pg_object_id, ObjectID::ForActorHandle(actor_id));
 }
 
 Status CoreWorker::SubmitActorTask(const ActorID &actor_id,
