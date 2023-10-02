@@ -1864,6 +1864,17 @@ std::vector<rpc::ObjectReference> CoreWorker::SubmitTask(
   auto constrained_resources =
       AddPlacementGroupConstraint(task_options.resources, scheduling_strategy);
 
+  auto placement_group_id = PlacementGroupID::Nil();
+  if (scheduling_strategy.scheduling_strategy_case() ==
+      rpc::SchedulingStrategy::SchedulingStrategyCase::kPlacementGroupSchedulingStrategy) {
+    
+    placement_group_id = PlacementGroupID::FromBinary(
+      scheduling_strategy.placement_group_scheduling_strategy().placement_group_id()
+    );
+    AddPlacementOptionReference(placement_group_id);
+  }
+
+
   const std::unordered_map<std::string, double> required_resources;
   auto task_name = task_options.name.empty()
                        ? function.GetFunctionDescriptor()->DefaultTaskName()

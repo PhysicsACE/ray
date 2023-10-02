@@ -923,6 +923,8 @@ class CoreWorker : public rpc::CoreWorkerServiceHandler {
   /// \param[in] placement_group_id The placement group ID to decrese the borrowed ref for
   void RemovePlacementRequiredReference(const PlacementGroupID &placement_group_id, const ActorID &actor_id);
 
+  /// Set the on_delete callback for a placement group in the reference counter to notify the gcs to automatically clean
+  /// up the placement group once it has gone out of scope. 
   void PlacementGroupNotification(const PlacementGroupID &placement_group_id,
                                        std::function<void(const PlacementGroupID &)> pg_out_of_scope_callback);
 
